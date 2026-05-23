@@ -28,8 +28,19 @@ curl http://localhost:8000/health
 - [x] Step 1: Project scaffold + `/health`
 - [x] Step 2: `/transcribe` — faster-whisper on uploaded audio
 - [x] Step 3: Diarization merge (pyannote `community-1`, speaker labels per segment)
-- [ ] Step 4: `/summarize` — Claude structured output
-- [ ] Step 5: `/process` — full pipeline end-to-end
+- [x] Step 4: `/summarize` — Claude structured output via tool use
+- [x] Step 5: `/process` — full pipeline end-to-end (audio → notes)
+
+## Endpoints
+
+| Method | Path | Body | Purpose |
+|---|---|---|---|
+| GET | `/health` | — | Liveness check |
+| POST | `/transcribe?diarize=true` | `multipart` audio file | Transcript + speaker labels |
+| POST | `/summarize` | JSON `{ segments: [...] }` | Structured meeting notes |
+| POST | `/process` | `multipart` audio file | Full pipeline: audio → notes |
+
+OpenAPI docs at `http://localhost:8765/docs` while the server is running.
 
 ## Quick test
 

@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.diarization import diarize_file
 from app.merge import assign_speakers
+from app.summarize import MeetingNotes, TranscriptSegment, summarize_segments
 from app.transcription import transcribe_file
 
 app = FastAPI(title="OttoNote Backend", version="0.1.0")
@@ -72,3 +73,36 @@ async def transcribe(
         segments=segments_out,
         num_speakers=num_speakers,
     )
+
+
+class SummarizeRequest(BaseModel):
+    segments: list[TranscriptSegment]
+
+
+@app.post("/summarize", response_model=MeetingNotes)
+async def summarize(req: SummarizeRequest) -> MeetingNotes:
+    """Extract structured meeting notes from a speaker-labeled transcript."""
+    return await summarize_segments(req.segments)
+
+
+@app.post("/process", response_model=MeetingNotes)
+async def process(file: UploadFile = File(...)) -> MeetingNotes:
+    """Full pipeline: upload audio → transcribe + diarize → summarize."""
+    suffix = Path(file.filename or "audio").suffix or ".wav"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        while chunk := await file.read(1024 * 1024):
+            tmp.write(chunk)
+
+    try:
+        result = await transcribe_file(tmp_path)
+        turns = await diarize_file(tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    speaker_segments = assign_speakers(result.segments, turns)
+    transcript_segments = [
+        TranscriptSegment(start=s.start, end=s.end, text=s.text, speaker=s.speaker)
+        for s in speaker_segments
+    ]
+    return await summarize_segments(transcript_segments)

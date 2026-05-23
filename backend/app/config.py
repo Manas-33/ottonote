@@ -15,5 +15,23 @@ class Settings(BaseSettings):
     whisper_model: str = "base"
     whisper_compute_type: str = "int8"
 
+    supabase_url: str = ""
+    supabase_anon_key: str = ""
+    supabase_service_role_key: str = ""
+    supabase_jwt_secret: str = ""
+    database_url: str = ""
+
+    dev_mode: bool = False
+
+    @property
+    def async_database_url(self) -> str:
+        """SQLAlchemy expects postgresql+asyncpg:// for async, regardless of what's in .env."""
+        url = self.database_url
+        if url.startswith("postgresql+asyncpg://"):
+            return url
+        if url.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + url[len("postgresql://"):]
+        return url
+
 
 settings = Settings()

@@ -33,14 +33,34 @@ curl http://localhost:8000/health
 
 ## Endpoints
 
-| Method | Path | Body | Purpose |
-|---|---|---|---|
-| GET | `/health` | — | Liveness check |
-| POST | `/transcribe?diarize=true` | `multipart` audio file | Transcript + speaker labels |
-| POST | `/summarize` | JSON `{ segments: [...] }` | Structured meeting notes |
-| POST | `/process` | `multipart` audio file | Full pipeline: audio → notes |
+All `/meetings*` endpoints require a Supabase JWT in `Authorization: Bearer <token>`.
 
-OpenAPI docs at `http://localhost:8765/docs` while the server is running.
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/health` | none | Liveness check |
+| POST | `/meetings` | required | Create a new meeting (returns id) |
+| GET | `/meetings` | required | List current user's meetings |
+| GET | `/meetings/{id}` | required | Full meeting: segments + summary + action items |
+| DELETE | `/meetings/{id}` | required | Delete meeting (cascades to all children) |
+| POST | `/meetings/{id}/process` | required | Upload audio, run pipeline, persist results |
+| POST | `/transcribe` | dev only | (Set `DEV_MODE=true` in `.env`) |
+| POST | `/summarize` | dev only | (Set `DEV_MODE=true` in `.env`) |
+| POST | `/process` | dev only | (Set `DEV_MODE=true` in `.env`) |
+
+OpenAPI docs at `http://localhost:8765/docs`.
+
+## Migrations
+
+```bash
+# Generate a new migration after editing models
+uv run alembic revision --autogenerate -m "what changed"
+
+# Apply migrations to Supabase
+uv run alembic upgrade head
+
+# Roll back one migration
+uv run alembic downgrade -1
+```
 
 ## Quick test
 

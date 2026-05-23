@@ -26,7 +26,21 @@ curl http://localhost:8000/health
 ## Status
 
 - [x] Step 1: Project scaffold + `/health`
-- [ ] Step 2: `/transcribe` — faster-whisper on uploaded audio
+- [x] Step 2: `/transcribe` — faster-whisper on uploaded audio
 - [ ] Step 3: Diarization merge (pyannote)
 - [ ] Step 4: `/summarize` — Claude structured output
 - [ ] Step 5: `/process` — full pipeline end-to-end
+
+## Quick test
+
+```bash
+# Generate a sample (macOS)
+mkdir -p samples
+say -o samples/test.aiff "Hello, this is a test."
+
+# Start server
+uv run uvicorn app.main:app --reload --port 8765
+
+# In another terminal
+curl -X POST http://localhost:8765/transcribe -F "file=@samples/test.aiff"
+```

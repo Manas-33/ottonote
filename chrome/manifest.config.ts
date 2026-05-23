@@ -25,6 +25,7 @@ export default defineManifest({
     "activeTab",
     "tabs",
     "scripting",
+    "downloads",
   ],
   host_permissions: [
     "http://localhost:8000/*",
@@ -32,5 +33,16 @@ export default defineManifest({
     "https://meet.google.com/*",
     "https://*.zoom.us/*",
     "https://teams.microsoft.com/*",
+  ],
+  content_scripts: [
+    {
+      matches: [
+        "https://meet.google.com/*",
+        "https://*.zoom.us/*",
+        "https://teams.microsoft.com/*",
+      ],
+      js: ["src/content/detect.ts"],
+      run_at: "document_idle",
+    },
   ],
 });

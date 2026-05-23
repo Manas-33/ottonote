@@ -16,7 +16,7 @@ from app.auth import CurrentUser, get_current_user
 from app.celery_app import celery_app
 from app.db import get_db
 from app.models import ActionItem, Meeting
-from app.storage import delete_audio, storage_path_for, upload_audio
+from app.storage import delete_audio, signed_url, storage_path_for, upload_audio
 from app.tasks import process_meeting_task
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
@@ -295,6 +295,26 @@ async def cancel_meeting_processing(
 
     fresh = await _fetch_meeting(meeting.id, user, db)
     return _to_detail(fresh)
+
+
+class AudioUrlOut(BaseModel):
+    url: str
+    expires_in: int
+
+
+@router.get("/{meeting_id}/audio_url", response_model=AudioUrlOut)
+async def get_audio_url(
+    meeting_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AudioUrlOut:
+    """Short-lived signed URL the client can use to stream the meeting audio."""
+    meeting = await _fetch_meeting(meeting_id, user, db)
+    if not meeting.audio_url:
+        raise HTTPException(status_code=404, detail="Meeting has no audio")
+    expires_in = 3600
+    url = await signed_url(meeting.audio_url, expires_in=expires_in)
+    return AudioUrlOut(url=url, expires_in=expires_in)
 
 
 class ActionItemPatch(BaseModel):

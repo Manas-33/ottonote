@@ -154,6 +154,27 @@ button.secondary:hover {
   margin-bottom: 16px;
 }
 
+.sp-exports {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.sp-exports button {
+  font-size: 11px;
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  background: #fff;
+  color: #333;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.sp-exports button:hover {
+  background: #f5f5f5;
+}
+
 .sp-title {
   margin: 0 0 8px;
   font-size: 16px;
@@ -278,13 +299,40 @@ button.secondary:hover {
 }
 
 .sp-turn {
-  padding: 8px 0;
+  padding: 8px;
+  margin: 0 -8px;
   border-top: 1px solid #f0f0f0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sp-turn:hover {
+  background: #f7f7f7;
 }
 
 .sp-turn:first-child {
   border-top: none;
-  padding-top: 0;
+}
+
+.sp-turn-active {
+  background: #fff7d6;
+}
+
+.sp-turn-active:hover {
+  background: #fff2bf;
+}
+
+.sp-audio {
+  margin-bottom: 12px;
+  background: #fff;
+  border: 1px solid #ececec;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.sp-audio audio {
+  width: 100%;
+  display: block;
 }
 
 .sp-speaker {

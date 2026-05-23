@@ -54,8 +54,10 @@ let recorder: MediaRecorder | null = null;
 let stream: MediaStream | null = null;
 let audioCtx: AudioContext | null = null;
 let chunks: Blob[] = [];
+let meetingTitle: string | null = null;
 
-async function start(streamId: string) {
+async function start(streamId: string, title: string | null) {
+  meetingTitle = title;
   stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       // @ts-expect-error chrome-specific constraints
@@ -109,7 +111,8 @@ async function stopAndUpload() {
   await setState({ state: "uploading", lastEvent: "Creating meeting…" });
 
   const meeting = await createMeeting(
-    `Browser meeting ${new Date().toLocaleString()}`
+    meetingTitle?.trim() ||
+      `Browser meeting ${new Date().toLocaleString()}`
   );
   await setState({
     meetingId: meeting.id,
@@ -127,7 +130,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.target !== "offscreen") return false;
 
   if (msg.type === "offscreen/start") {
-    start(msg.streamId)
+    start(msg.streamId, msg.title ?? null)
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;

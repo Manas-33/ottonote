@@ -96,6 +96,16 @@ export async function cancelMeeting(meetingId: string): Promise<Meeting> {
   return jsonOrThrow<Meeting>(res, "Cancel meeting");
 }
 
+export type AudioUrl = {
+  url: string;
+  expires_in: number;
+};
+
+export async function getAudioUrl(meetingId: string): Promise<AudioUrl> {
+  const res = await apiFetch(`/meetings/${meetingId}/audio_url`);
+  return jsonOrThrow<AudioUrl>(res, "Get audio URL");
+}
+
 export async function toggleActionItem(
   meetingId: string,
   itemId: string,

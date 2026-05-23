@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  getAudioUrl,
   getMeeting,
   toggleActionItem,
   type ActionItem,
   type Meeting,
 } from "../api/meetings";
 import { loadSession, type Session } from "../auth/session";
+import { downloadMarkdown, openPrintable } from "../lib/exports";
 import { STATE_KEY, type CaptureState } from "../state";
 
 export function SidePanel() {
@@ -183,6 +185,40 @@ function MeetingView({
   meeting: Meeting;
   onActionItemToggle: (item: ActionItem, status: "open" | "done") => void;
 }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  // Fetch a fresh signed URL whenever the meeting changes.
+  useEffect(() => {
+    if (meeting.status !== "done") return;
+    let cancelled = false;
+    getAudioUrl(meeting.id)
+      .then(({ url }) => {
+        if (!cancelled) setAudioUrl(url);
+      })
+      .catch((err) => {
+        if (!cancelled) setAudioError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [meeting.id, meeting.status]);
+
+  const seekTo = (seconds: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = seconds;
+    audio.play().catch(() => {
+      /* user agent may block until first interaction; harmless */
+    });
+  };
+
+  const activeIdx = meeting.segments.findIndex(
+    (s) => currentTime >= s.start_sec && currentTime < s.end_sec
+  );
+
   return (
     <>
       <section className="sp-meta">
@@ -200,7 +236,34 @@ function MeetingView({
             </Badge>
           )}
         </div>
+        {meeting.status === "done" && (
+          <div className="sp-exports">
+            <button onClick={() => downloadMarkdown(meeting)}>
+              Export markdown
+            </button>
+            <button onClick={() => openPrintable(meeting)}>
+              Save as PDF
+            </button>
+          </div>
+        )}
       </section>
+
+      {meeting.status === "done" && (
+        <div className="sp-audio">
+          {audioUrl ? (
+            <audio
+              ref={audioRef}
+              src={audioUrl}
+              controls
+              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+            />
+          ) : audioError ? (
+            <p className="empty error">Audio unavailable: {audioError}</p>
+          ) : (
+            <p className="empty">Loading audio…</p>
+          )}
+        </div>
+      )}
 
       {meeting.summary && (
         <Card title="Summary">
@@ -287,7 +350,15 @@ function MeetingView({
         <Card title="Transcript">
           <div className="sp-transcript">
             {meeting.segments.map((s) => (
-              <div className="sp-turn" key={s.idx}>
+              <div
+                className={
+                  "sp-turn" + (s.idx === activeIdx ? " sp-turn-active" : "")
+                }
+                key={s.idx}
+                onClick={() => seekTo(s.start_sec)}
+                role="button"
+                tabIndex={0}
+              >
                 <div
                   className="sp-speaker"
                   style={{ color: speakerColor(s.speaker) }}

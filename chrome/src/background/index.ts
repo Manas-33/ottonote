@@ -23,7 +23,31 @@ async function sendToOffscreen<T = unknown>(message: object): Promise<T> {
   return chrome.runtime.sendMessage({ ...message, target: "offscreen" });
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+async function startCapture(tabId: number, title: string | null) {
+  await resetState();
+  await setState({ lastEvent: "Spawning offscreen doc…" });
+  await ensureOffscreen();
+
+  await setState({ lastEvent: "Requesting stream id…" });
+  const streamId = await getStreamId(tabId);
+  if (!streamId) throw new Error("Failed to get stream id");
+
+  await setState({ lastEvent: "Starting MediaRecorder…" });
+  const res = await sendToOffscreen<{ ok: boolean; error?: string }>({
+    type: "offscreen/start",
+    streamId,
+    title,
+  });
+  if (!res.ok) throw new Error(res.error ?? "Offscreen start failed");
+
+  await setState({
+    state: "recording",
+    startedAt: Date.now(),
+    lastEvent: "Recording",
+  });
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "ottonote/state-patch") {
     setState(msg.patch as Partial<CaptureState>).then(() =>
       sendResponse({ ok: true })
@@ -41,33 +65,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "ottonote/start") {
     (async () => {
       try {
-        await resetState();
-        await setState({ lastEvent: "Looking up active tab…" });
         const [tab] = await chrome.tabs.query({
           active: true,
           currentWindow: true,
         });
         if (!tab?.id) throw new Error("No active tab");
+        await startCapture(tab.id, tab.title ?? null);
+        sendResponse({ ok: true });
+      } catch (e) {
+        await setState({ state: "failed", lastEvent: `Error: ${String(e)}` });
+        sendResponse({ ok: false, error: String(e) });
+      }
+    })();
+    return true;
+  }
 
-        await setState({ lastEvent: "Spawning offscreen doc…" });
-        await ensureOffscreen();
-
-        await setState({ lastEvent: "Requesting stream id…" });
-        const streamId = await getStreamId(tab.id);
-        if (!streamId) throw new Error("Failed to get stream id");
-
-        await setState({ lastEvent: "Starting MediaRecorder…" });
-        const res = await sendToOffscreen<{ ok: boolean; error?: string }>({
-          type: "offscreen/start",
-          streamId,
-        });
-        if (!res.ok) throw new Error(res.error ?? "Offscreen start failed");
-
-        await setState({
-          state: "recording",
-          startedAt: Date.now(),
-          lastEvent: "Recording",
-        });
+  if (msg?.type === "ottonote/start-from-content") {
+    (async () => {
+      try {
+        const tabId = sender.tab?.id;
+        if (!tabId) throw new Error("Missing sender tab");
+        await startCapture(tabId, sender.tab?.title ?? null);
         sendResponse({ ok: true });
       } catch (e) {
         await setState({ state: "failed", lastEvent: `Error: ${String(e)}` });
@@ -81,8 +99,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     (async () => {
       try {
         await setState({ lastEvent: "Stopping recorder…" });
-        // Offscreen takes over from here: it handles the upload and status
-        // transitions (uploading -> processing) by writing to storage directly.
         const res = await sendToOffscreen<{ ok: boolean; error?: string }>({
           type: "offscreen/stop",
         });

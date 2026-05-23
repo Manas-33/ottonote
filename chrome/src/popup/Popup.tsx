@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { clearSession, loadSession, type Session } from "../auth/session";
 import { signInWithPassword } from "../auth/login";
-import { getMeeting, type Meeting } from "../api/meetings";
+import { cancelMeeting } from "../api/meetings";
 import { resetState, STATE_KEY, type CaptureState } from "../state";
 
 export function Popup() {
@@ -80,6 +80,17 @@ function LoginForm({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
   );
 }
 
+async function openSidePanel() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id) {
+    try {
+      await chrome.sidePanel.open({ tabId: tab.id });
+    } catch (e) {
+      console.error("Failed to open side panel", e);
+    }
+  }
+}
+
 function Recorder({
   session,
   onSignOut,
@@ -88,7 +99,6 @@ function Recorder({
   onSignOut: () => void;
 }) {
   const [snapshot, setSnapshot] = useState<CaptureState>({ state: "idle" });
-  const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const timer = useRef<number | null>(null);
@@ -119,53 +129,11 @@ function Recorder({
     setElapsed(0);
   }, [snapshot.state, snapshot.startedAt]);
 
-  // Poll backend while processing.
-  useEffect(() => {
-    if (snapshot.state !== "processing" || !snapshot.meetingId) {
-      return;
-    }
-    let cancelled = false;
-    const id = snapshot.meetingId;
-    const poll = async () => {
-      try {
-        const m = await getMeeting(id);
-        if (cancelled) return;
-        setMeeting(m);
-        if (m.status === "done" || m.status === "failed" || m.status === "cancelled") {
-          await chrome.storage.local.set({
-            [STATE_KEY]: {
-              state: m.status === "done" ? "done" : "failed",
-              meetingId: id,
-              lastEvent:
-                m.status === "done"
-                  ? "Done"
-                  : m.error_message ?? `Status: ${m.status}`,
-            },
-          });
-        }
-      } catch (err) {
-        if (cancelled) return;
-        console.error(err);
-      }
-    };
-    poll();
-    const handle = window.setInterval(poll, 3000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(handle);
-    };
-  }, [snapshot.state, snapshot.meetingId]);
-
-  // Hydrate meeting view from backend when popup reopens onto a done meeting.
-  useEffect(() => {
-    if (snapshot.state === "done" && snapshot.meetingId && !meeting) {
-      getMeeting(snapshot.meetingId).then(setMeeting).catch(console.error);
-    }
-  }, [snapshot.state, snapshot.meetingId, meeting]);
-
   const start = async () => {
     setBusy(true);
-    setMeeting(null);
+    // Open the side panel proactively while we still hold a user gesture —
+    // results will start streaming in there.
+    await openSidePanel();
     await chrome.runtime.sendMessage({ type: "ottonote/start" });
     setBusy(false);
   };
@@ -177,8 +145,26 @@ function Recorder({
   };
 
   const reset = async () => {
-    setMeeting(null);
     await resetState();
+  };
+
+  const cancel = async () => {
+    setBusy(true);
+    try {
+      // Best-effort: tell the backend to revoke the Celery task. If we don't
+      // have a meetingId, or the call fails, still wipe local state so the
+      // user isn't trapped.
+      if (snapshot.meetingId) {
+        try {
+          await cancelMeeting(snapshot.meetingId);
+        } catch (e) {
+          console.warn("Cancel call failed; resetting local state anyway", e);
+        }
+      }
+      await resetState();
+    } finally {
+      setBusy(false);
+    }
   };
 
   const signOut = async () => {
@@ -187,7 +173,10 @@ function Recorder({
   };
 
   const recording = snapshot.state === "recording";
+  const hasResults = !!snapshot.meetingId;
   const terminal = snapshot.state === "done" || snapshot.state === "failed";
+  const inFlight =
+    snapshot.state === "uploading" || snapshot.state === "processing";
 
   return (
     <div className="popup">
@@ -215,7 +204,17 @@ function Recorder({
         )}
         {snapshot.lastEvent && <p className="status">› {snapshot.lastEvent}</p>}
 
-        {snapshot.state === "done" && meeting && <MeetingResult meeting={meeting} />}
+        {hasResults && (
+          <button className="secondary" onClick={openSidePanel}>
+            Open side panel
+          </button>
+        )}
+
+        {inFlight && (
+          <button className="secondary" onClick={cancel} disabled={busy}>
+            Cancel
+          </button>
+        )}
 
         {terminal && (
           <button className="primary" onClick={reset}>
@@ -226,32 +225,6 @@ function Recorder({
           Sign out
         </button>
       </main>
-    </div>
-  );
-}
-
-function MeetingResult({ meeting }: { meeting: Meeting }) {
-  return (
-    <div className="result">
-      {meeting.summary?.summary && (
-        <>
-          <h2>Summary</h2>
-          <p>{meeting.summary.summary}</p>
-        </>
-      )}
-      {meeting.action_items.length > 0 && (
-        <>
-          <h2>Action items</h2>
-          <ul>
-            {meeting.action_items.map((a) => (
-              <li key={a.id}>
-                <strong>{a.assignee}:</strong> {a.task}
-                {a.due_date && <span className="due"> · {a.due_date}</span>}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
     </div>
   );
 }

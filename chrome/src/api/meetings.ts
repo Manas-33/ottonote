@@ -95,3 +95,19 @@ export async function cancelMeeting(meetingId: string): Promise<Meeting> {
   });
   return jsonOrThrow<Meeting>(res, "Cancel meeting");
 }
+
+export async function toggleActionItem(
+  meetingId: string,
+  itemId: string,
+  status: "open" | "done"
+): Promise<ActionItem> {
+  const res = await apiFetch(
+    `/meetings/${meetingId}/action_items/${itemId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    }
+  );
+  return jsonOrThrow<ActionItem>(res, "Toggle action item");
+}

@@ -1,6 +1,6 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 body {
@@ -74,10 +74,15 @@ button.secondary {
   width: 100%;
   padding: 8px 12px;
   border: 1px solid #ddd;
-  background: transparent;
+  background: #fff;
+  color: #333;
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
+}
+
+button.secondary:hover {
+  background: #f5f5f5;
 }
 
 .error {
@@ -105,61 +110,192 @@ button.secondary {
   word-break: break-word;
 }
 
-.result {
-  margin-top: 12px;
-  padding: 10px;
-  background: #fff;
-  border: 1px solid #eee;
-  border-radius: 6px;
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-.result h2 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #888;
-  margin: 0 0 6px;
-}
-
-.result h2:not(:first-child) {
-  margin-top: 12px;
-}
-
-.result p {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.result ul {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.result .due {
-  color: #888;
-}
-
 .sidepanel {
-  padding: 16px;
   height: 100vh;
-  box-sizing: border-box;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: #fafafa;
 }
 
-.sidepanel h1 {
-  font-size: 14px;
-  margin: 0 0 12px;
-  color: #666;
+.sp-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid #ececec;
+  background: #fff;
+}
+
+.sp-header h1 {
+  margin: 0;
+  font-size: 13px;
+  color: #888;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.sp-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
 }
 
 .empty {
   font-size: 13px;
   color: #888;
+  text-align: center;
+  margin-top: 40px;
+  padding: 0 20px;
+}
+
+.empty.error {
+  color: #b00020;
+}
+
+.sp-meta {
+  margin-bottom: 16px;
+}
+
+.sp-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #111;
+}
+
+.sp-metabar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sp-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: #eef0f3;
+  color: #444;
+  border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.sp-card {
+  background: #fff;
+  border: 1px solid #ececec;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.sp-card h3 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+  font-weight: 600;
+}
+
+.sp-card h4 {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  color: #555;
+}
+
+.sp-card h4:first-child {
+  margin-top: 0;
+}
+
+.sp-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #222;
+}
+
+.sp-card ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #222;
+}
+
+.sp-card .due {
+  color: #888;
+  font-size: 12px;
+}
+
+.sp-action-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sp-action-list li {
+  margin: 0 0 8px;
+}
+
+.sp-action-list label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.sp-action-list input[type="checkbox"] {
+  margin-top: 3px;
+}
+
+.sp-action-list .done {
+  text-decoration: line-through;
+  color: #999;
+}
+
+.sp-keyword-group {
+  margin-bottom: 8px;
+}
+
+.sp-keyword-group:last-child {
+  margin-bottom: 0;
+}
+
+.sp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sp-chip {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: #f4f4f4;
+  color: #333;
+  border-radius: 4px;
+}
+
+.sp-transcript {
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.sp-turn {
+  padding: 8px 0;
+  border-top: 1px solid #f0f0f0;
+}
+
+.sp-turn:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.sp-speaker {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.sp-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #222;
 }

@@ -16,6 +16,7 @@ from app.auth import CurrentUser, get_current_user
 from app.celery_app import celery_app
 from app.db import get_db
 from app.models import Meeting
+from app.storage import delete_audio, storage_path_for, upload_audio
 from app.tasks import process_meeting_task
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
@@ -213,8 +214,16 @@ async def delete_meeting(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     meeting = await _fetch_meeting(meeting_id, user, db)
+    storage_path = meeting.audio_url
     await db.delete(meeting)
     await db.commit()
+    if storage_path:
+        # Best-effort: a leftover object is harmless, but a broken delete
+        # shouldn't fail the request after the DB row is gone.
+        try:
+            await delete_audio(storage_path)
+        except Exception:
+            pass
 
 
 @router.post(
@@ -239,11 +248,18 @@ async def process_meeting(
         while chunk := await file.read(1024 * 1024):
             tmp.write(chunk)
 
+    storage_path = storage_path_for(user.id, meeting.id, suffix)
+    try:
+        await upload_audio(tmp_path, storage_path, file.content_type or "audio/wav")
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
     meeting.status = "processing"
     meeting.error_message = None
+    meeting.audio_url = storage_path
     await db.commit()
 
-    async_result = process_meeting_task.delay(str(meeting.id), str(tmp_path))
+    async_result = process_meeting_task.delay(str(meeting.id))
     meeting.task_id = async_result.id
     await db.commit()
 

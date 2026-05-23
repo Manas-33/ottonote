@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from pathlib import Path
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -14,11 +13,12 @@ from app.config import settings
 from app.diarization import diarize_file
 from app.merge import assign_speakers
 from app.models import ActionItem, CalendarEvent, Meeting, Segment, Summary
+from app.storage import download_audio_to_tmp
 from app.summarize import TranscriptSegment, summarize_segments
 from app.transcription import transcribe_file
 
 
-async def _run_pipeline(meeting_id: uuid.UUID, audio_path: Path) -> None:
+async def _run_pipeline(meeting_id: uuid.UUID) -> None:
     # Build engine inside this task's event loop. Celery runs each task via
     # asyncio.run(), which creates a fresh loop; asyncpg connections are
     # loop-bound, so reusing app.db.engine across tasks raises "attached to a
@@ -38,23 +38,33 @@ async def _run_pipeline(meeting_id: uuid.UUID, audio_path: Path) -> None:
             await db.execute(delete(ActionItem).where(ActionItem.meeting_id == meeting_id))
             await db.execute(delete(CalendarEvent).where(CalendarEvent.meeting_id == meeting_id))
 
-            try:
-                transcription = await transcribe_file(audio_path)
-                turns = await diarize_file(audio_path)
-                labeled = assign_speakers(transcription.segments, turns)
-                notes = await summarize_segments(
-                    [
-                        TranscriptSegment(
-                            start=s.start, end=s.end, text=s.text, speaker=s.speaker
-                        )
-                        for s in labeled
-                    ]
-                )
-            except Exception as e:
+            if not meeting.audio_url:
                 meeting.status = "failed"
-                meeting.error_message = str(e)[:500]
+                meeting.error_message = "No audio_url on meeting"
                 await db.commit()
-                raise
+                return
+
+            audio_path = await download_audio_to_tmp(meeting.audio_url)
+            try:
+                try:
+                    transcription = await transcribe_file(audio_path)
+                    turns = await diarize_file(audio_path)
+                    labeled = assign_speakers(transcription.segments, turns)
+                    notes = await summarize_segments(
+                        [
+                            TranscriptSegment(
+                                start=s.start, end=s.end, text=s.text, speaker=s.speaker
+                            )
+                            for s in labeled
+                        ]
+                    )
+                except Exception as e:
+                    meeting.status = "failed"
+                    meeting.error_message = str(e)[:500]
+                    await db.commit()
+                    raise
+            finally:
+                audio_path.unlink(missing_ok=True)
 
             # Cancellation race: if the user cancelled while the pipeline ran,
             # the API already set status=cancelled. Don't overwrite their decision.
@@ -113,9 +123,5 @@ async def _run_pipeline(meeting_id: uuid.UUID, audio_path: Path) -> None:
 
 
 @celery_app.task(name="app.tasks.process_meeting")
-def process_meeting_task(meeting_id: str, audio_path: str) -> None:
-    path = Path(audio_path)
-    try:
-        asyncio.run(_run_pipeline(uuid.UUID(meeting_id), path))
-    finally:
-        path.unlink(missing_ok=True)
+def process_meeting_task(meeting_id: str) -> None:
+    asyncio.run(_run_pipeline(uuid.UUID(meeting_id)))

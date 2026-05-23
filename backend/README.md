@@ -6,8 +6,12 @@ FastAPI service for transcription (faster-whisper), speaker diarization (pyannot
 
 ```bash
 cd backend
-cp .env.example .env  # fill in HF_TOKEN and ANTHROPIC_API_KEY
+cp .env.example .env  # fill in HF_TOKEN, ANTHROPIC_API_KEY, SUPABASE_* keys
 uv sync
+
+# One-time: create the private Supabase Storage bucket for audio uploads.
+# Idempotent — safe to re-run if you're not sure.
+uv run python scripts/setup_storage.py
 ```
 
 ## Run

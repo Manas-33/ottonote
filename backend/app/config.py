@@ -25,6 +25,8 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
+    supabase_storage_bucket: str = "meetings"
+
     @property
     def async_database_url(self) -> str:
         """SQLAlchemy expects postgresql+asyncpg:// for async, regardless of what's in .env."""

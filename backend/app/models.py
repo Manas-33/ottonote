@@ -42,6 +42,7 @@ class Meeting(Base):
     num_speakers: Mapped[int | None] = mapped_column(Integer)
     audio_url: Mapped[str | None] = mapped_column(Text)  # filled in only if we store audio
     error_message: Mapped[str | None] = mapped_column(Text)
+    task_id: Mapped[str | None] = mapped_column(String(64))  # Celery AsyncResult id
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

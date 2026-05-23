@@ -74,6 +74,7 @@ class MeetingDetail(BaseModel):
     language: str | None
     num_speakers: int | None
     error_message: str | None
+    task_id: str | None
     created_at: str
     segments: list[SegmentOut]
     summary: SummaryOut | None
@@ -90,6 +91,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
         language=m.language,
         num_speakers=m.num_speakers,
         error_message=m.error_message,
+        task_id=m.task_id,
         created_at=m.created_at.isoformat(),
         segments=[
             SegmentOut(
@@ -240,7 +242,9 @@ async def process_meeting(
     meeting.error_message = None
     await db.commit()
 
-    process_meeting_task.delay(str(meeting.id), str(tmp_path))
+    async_result = process_meeting_task.delay(str(meeting.id), str(tmp_path))
+    meeting.task_id = async_result.id
+    await db.commit()
 
     fresh = await _fetch_meeting(meeting.id, user, db)
     return _to_detail(fresh)

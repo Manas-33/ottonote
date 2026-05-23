@@ -22,12 +22,30 @@ redis-server                       # or: docker run -p 6379:6379 redis:7
 uv run uvicorn app.main:app --reload
 
 # 3. Worker (runs the transcribe/diarize/summarize pipeline)
-uv run celery -A app.celery_app worker --loglevel=info
+#    macOS: --pool=solo avoids a fork crash from duplicate ffmpeg/av dylibs
+#    loaded by pyannote+faster-whisper. On Linux, drop --pool=solo for the
+#    default prefork pool and add --concurrency=N to scale.
+uv run celery -A app.celery_app worker --pool=solo --loglevel=info
 ```
 
 `POST /meetings/{id}/process` enqueues the pipeline and returns immediately
 with `status: "processing"`. Poll `GET /meetings/{id}` until `status` is
 `done` or `failed`.
+
+### Deployment (Linux)
+
+`--pool=solo` is a macOS-only workaround for the ffmpeg/av dylib clash on
+fork — it limits one worker process to one job at a time. On Linux the
+clash doesn't happen, so use the default prefork pool with `--concurrency=N`
+to process N meetings in parallel per worker process:
+
+```bash
+celery -A app.celery_app worker --concurrency=4 --loglevel=info
+```
+
+Tune `N` against worker RAM — each child loads its own Whisper + pyannote
+models. Scale horizontally by running more worker containers/machines all
+pointing at the same Redis broker.
 
 Then:
 

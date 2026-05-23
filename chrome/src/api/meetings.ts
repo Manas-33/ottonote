@@ -61,6 +61,21 @@ async function jsonOrThrow<T>(res: Response, what: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export type MeetingSummaryRow = {
+  id: string;
+  title: string | null;
+  status: MeetingStatus;
+  duration_sec: number | null;
+  language: string | null;
+  num_speakers: number | null;
+  created_at: string;
+};
+
+export async function listMeetings(): Promise<MeetingSummaryRow[]> {
+  const res = await apiFetch("/meetings");
+  return jsonOrThrow<MeetingSummaryRow[]>(res, "List meetings");
+}
+
 export async function createMeeting(title?: string | null): Promise<Meeting> {
   const res = await apiFetch("/meetings", {
     method: "POST",

@@ -2,20 +2,24 @@ import { useEffect, useRef, useState } from "react";
 import {
   getAudioUrl,
   getMeeting,
+  listMeetings,
   toggleActionItem,
   type ActionItem,
   type Meeting,
+  type MeetingSummaryRow,
 } from "../api/meetings";
 import { loadSession, type Session } from "../auth/session";
 import { downloadMarkdown, openPrintable } from "../lib/exports";
 import { STATE_KEY, type CaptureState } from "../state";
 
+type View = "list" | string; // "list" or a meeting id
+
 export function SidePanel() {
   const [session, setSession] = useState<Session | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [snapshot, setSnapshot] = useState<CaptureState>({ state: "idle" });
-  const [meeting, setMeeting] = useState<Meeting | null>(null);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  // null = follow the in-flight capture; string/list = explicit user choice.
+  const [userView, setUserView] = useState<View | null>(null);
 
   useEffect(() => {
     loadSession().then((s) => {
@@ -37,24 +41,169 @@ export function SidePanel() {
     return () => chrome.storage.onChanged.removeListener(onChange);
   }, []);
 
-  // Fetch meeting whenever we have a meetingId. Re-fetch on a polling cadence
-  // while processing.
+  // When a new recording starts, clear any user override so we auto-follow
+  // the new meeting.
+  const prevStateRef = useRef<string | undefined>();
   useEffect(() => {
-    const id = snapshot.meetingId;
-    if (!id || !session) {
-      setMeeting(null);
-      return;
+    const prev = prevStateRef.current;
+    prevStateRef.current = snapshot.state;
+    if (snapshot.state === "recording" && prev !== "recording") {
+      setUserView(null);
     }
+  }, [snapshot.state]);
+
+  if (!authChecked) {
+    return (
+      <Shell>
+        <p className="empty">Loading…</p>
+      </Shell>
+    );
+  }
+
+  if (!session) {
+    return (
+      <Shell>
+        <p className="empty">
+          Sign in via the OttoNote popup to see meeting results here.
+        </p>
+      </Shell>
+    );
+  }
+
+  // Effective view: explicit user choice wins, otherwise follow the capture.
+  const effective: View =
+    userView ?? (snapshot.meetingId ? snapshot.meetingId : "list");
+
+  if (effective === "list") {
+    return (
+      <Shell>
+        <MeetingList onSelect={(id) => setUserView(id)} />
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell
+      back={() => setUserView("list")}
+      backLabel="Meetings"
+    >
+      <MeetingDetail
+        meetingId={effective}
+        snapshot={snapshot}
+      />
+    </Shell>
+  );
+}
+
+function Shell({
+  children,
+  back,
+  backLabel,
+}: {
+  children: React.ReactNode;
+  back?: () => void;
+  backLabel?: string;
+}) {
+  return (
+    <div className="sidepanel">
+      <header className="sp-header">
+        {back ? (
+          <button className="sp-back" onClick={back}>
+            ← {backLabel ?? "Back"}
+          </button>
+        ) : (
+          <h1>OttoNote</h1>
+        )}
+      </header>
+      <div className="sp-body">{children}</div>
+    </div>
+  );
+}
+
+function MeetingList({ onSelect }: { onSelect: (id: string) => void }) {
+  const [rows, setRows] = useState<MeetingSummaryRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      listMeetings()
+        .then((rs) => {
+          if (!cancelled) {
+            setRows(rs);
+            setError(null);
+          }
+        })
+        .catch((err) => {
+          if (!cancelled)
+            setError(err instanceof Error ? err.message : String(err));
+        });
+    };
+    load();
+    // Re-poll lightly so a freshly-created meeting shows up in the list.
+    const handle = window.setInterval(load, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(handle);
+    };
+  }, []);
+
+  if (error) return <p className="empty error">{error}</p>;
+  if (!rows) return <p className="empty">Loading…</p>;
+  if (rows.length === 0) {
+    return (
+      <p className="empty">
+        No meetings yet. Click the OttoNote icon to start recording.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="sp-list">
+      {rows.map((m) => (
+        <li key={m.id}>
+          <button className="sp-list-row" onClick={() => onSelect(m.id)}>
+            <div className="sp-list-title">
+              {m.title ?? "Untitled meeting"}
+            </div>
+            <div className="sp-list-meta">
+              <span className={`sp-status sp-status-${m.status}`}>
+                {m.status}
+              </span>
+              {m.duration_sec != null && (
+                <span> · {formatDuration(m.duration_sec)}</span>
+              )}
+              <span> · {formatRelative(m.created_at)}</span>
+            </div>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function MeetingDetail({
+  meetingId,
+  snapshot,
+}: {
+  meetingId: string;
+  snapshot: CaptureState;
+}) {
+  const [meeting, setMeeting] = useState<Meeting | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const m = await getMeeting(id);
+        const m = await getMeeting(meetingId);
         if (cancelled) return;
         setMeeting(m);
         setFetchError(null);
-        // Promote terminal backend status into shared capture state so the
-        // popup and the polling loop both see the transition.
+        // Promote terminal backend status into shared capture state if this
+        // meeting matches the in-flight capture.
         if (
+          snapshot.meetingId === meetingId &&
           snapshot.state === "processing" &&
           (m.status === "done" || m.status === "failed" || m.status === "cancelled")
         ) {
@@ -63,16 +212,20 @@ export function SidePanel() {
               ...snapshot,
               state: m.status === "done" ? "done" : "failed",
               lastEvent:
-                m.status === "done" ? "Done" : m.error_message ?? `Status: ${m.status}`,
+                m.status === "done"
+                  ? "Done"
+                  : m.error_message ?? `Status: ${m.status}`,
             },
           });
         }
       } catch (err) {
-        if (!cancelled) setFetchError(err instanceof Error ? err.message : String(err));
+        if (!cancelled)
+          setFetchError(err instanceof Error ? err.message : String(err));
       }
     };
     load();
-    if (snapshot.state === "processing") {
+    // Poll while this meeting is the one being processed.
+    if (snapshot.meetingId === meetingId && snapshot.state === "processing") {
       const handle = window.setInterval(load, 3000);
       return () => {
         cancelled = true;
@@ -82,99 +235,63 @@ export function SidePanel() {
     return () => {
       cancelled = true;
     };
-  }, [snapshot.meetingId, snapshot.state, session]);
+  }, [meetingId, snapshot.state, snapshot.meetingId]);
 
-  if (!authChecked) {
-    return <Shell><p className="empty">Loading…</p></Shell>;
-  }
-
-  if (!session) {
+  // While we're recording the current target, the meeting doesn't exist yet
+  // (createMeeting fires on stop). Show a friendly placeholder.
+  if (snapshot.meetingId === meetingId && snapshot.state === "recording") {
     return (
-      <Shell>
-        <p className="empty">Sign in via the OttoNote popup to see meeting results here.</p>
-      </Shell>
+      <p className="empty">
+        Recording in progress. Results will appear here once processing finishes.
+      </p>
     );
   }
 
-  if (snapshot.state === "idle" && !meeting) {
-    return (
-      <Shell>
-        <p className="empty">No active meeting. Click the OttoNote icon to start recording.</p>
-      </Shell>
-    );
-  }
-
-  if (snapshot.state === "recording") {
-    return (
-      <Shell>
-        <p className="empty">Recording in progress. Results will appear here once processing finishes.</p>
-      </Shell>
-    );
-  }
-
-  if (snapshot.state === "uploading" || snapshot.state === "processing") {
-    return (
-      <Shell>
-        <p className="empty">{snapshot.lastEvent ?? "Processing…"}</p>
-      </Shell>
-    );
+  if (
+    snapshot.meetingId === meetingId &&
+    (snapshot.state === "uploading" || snapshot.state === "processing") &&
+    !meeting
+  ) {
+    return <p className="empty">{snapshot.lastEvent ?? "Processing…"}</p>;
   }
 
   if (fetchError) {
-    return (
-      <Shell>
-        <p className="empty error">Couldn't load meeting: {fetchError}</p>
-      </Shell>
-    );
+    return <p className="empty error">Couldn't load meeting: {fetchError}</p>;
   }
 
   if (!meeting) {
-    return <Shell><p className="empty">Loading meeting…</p></Shell>;
+    return <p className="empty">Loading meeting…</p>;
   }
 
   return (
-    <Shell>
-      <MeetingView
-        meeting={meeting}
-        onActionItemToggle={(item, status) => {
+    <MeetingView
+      meeting={meeting}
+      onActionItemToggle={(item, status) => {
+        setMeeting((prev) =>
+          prev
+            ? {
+                ...prev,
+                action_items: prev.action_items.map((a) =>
+                  a.id === item.id ? { ...a, status } : a
+                ),
+              }
+            : prev
+        );
+        toggleActionItem(meeting.id, item.id, status).catch((err) => {
+          console.error(err);
           setMeeting((prev) =>
             prev
               ? {
                   ...prev,
                   action_items: prev.action_items.map((a) =>
-                    a.id === item.id ? { ...a, status } : a
+                    a.id === item.id ? { ...a, status: item.status } : a
                   ),
                 }
               : prev
           );
-          toggleActionItem(meeting.id, item.id, status).catch((err) => {
-            console.error(err);
-            // Revert on failure.
-            setMeeting((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    action_items: prev.action_items.map((a) =>
-                      a.id === item.id ? { ...a, status: item.status } : a
-                    ),
-                  }
-                : prev
-            );
-          });
-        }}
-      />
-    </Shell>
-  );
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="sidepanel">
-      <header className="sp-header">
-        <h1>OttoNote</h1>
-      </header>
-      <div className="sp-body">{children}</div>
-    </div>
+        });
+      }}
+    />
   );
 }
 
@@ -191,7 +308,6 @@ function MeetingView({
   const [currentTime, setCurrentTime] = useState(0);
   const resumeAtRef = useRef<{ time: number; play: boolean } | null>(null);
 
-  // Fetch a fresh signed URL whenever the meeting changes.
   useEffect(() => {
     if (meeting.status !== "done") return;
     let cancelled = false;
@@ -200,14 +316,14 @@ function MeetingView({
         if (!cancelled) setAudioUrl(url);
       })
       .catch((err) => {
-        if (!cancelled) setAudioError(err instanceof Error ? err.message : String(err));
+        if (!cancelled)
+          setAudioError(err instanceof Error ? err.message : String(err));
       });
     return () => {
       cancelled = true;
     };
   }, [meeting.id, meeting.status]);
 
-  // Restore playback position after a URL refresh.
   const handleLoadedMetadata = () => {
     const audio = audioRef.current;
     const resume = resumeAtRef.current;
@@ -221,8 +337,6 @@ function MeetingView({
   const handleAudioError = () => {
     const audio = audioRef.current;
     if (!audio) return;
-    // The signed URL almost certainly expired (1h TTL). Remember where we
-    // were, fetch a new URL, and resume after the next loadedmetadata.
     resumeAtRef.current = {
       time: audio.currentTime || 0,
       play: !audio.paused,
@@ -241,9 +355,7 @@ function MeetingView({
     const audio = audioRef.current;
     if (!audio) return;
     audio.currentTime = seconds;
-    audio.play().catch(() => {
-      /* user agent may block until first interaction; harmless */
-    });
+    audio.play().catch(() => {});
   };
 
   const activeIdx = meeting.segments.findIndex(
@@ -272,9 +384,7 @@ function MeetingView({
             <button onClick={() => downloadMarkdown(meeting)}>
               Export markdown
             </button>
-            <button onClick={() => openPrintable(meeting)}>
-              Save as PDF
-            </button>
+            <button onClick={() => openPrintable(meeting)}>Save as PDF</button>
           </div>
         )}
       </section>
@@ -436,6 +546,19 @@ function formatDuration(seconds: number): string {
   return `${m}:${s}`;
 }
 
+function formatRelative(iso: string): string {
+  const then = new Date(iso).getTime();
+  const diff = Math.max(0, Date.now() - then);
+  const min = 60 * 1000;
+  const hour = 60 * min;
+  const day = 24 * hour;
+  if (diff < min) return "just now";
+  if (diff < hour) return `${Math.floor(diff / min)}m ago`;
+  if (diff < day) return `${Math.floor(diff / hour)}h ago`;
+  if (diff < 7 * day) return `${Math.floor(diff / day)}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 const PALETTE = [
   "#1d4ed8",
   "#15803d",
@@ -447,7 +570,6 @@ const PALETTE = [
 
 function speakerColor(speaker: string | null): string {
   if (!speaker) return "#666";
-  // Stable colour per label.
   let hash = 0;
   for (let i = 0; i < speaker.length; i++) {
     hash = (hash * 31 + speaker.charCodeAt(i)) | 0;

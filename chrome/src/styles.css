@@ -132,6 +132,91 @@ button.secondary:hover {
   font-weight: 600;
 }
 
+.sp-back {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: #444;
+  padding: 0;
+  font-weight: 500;
+}
+
+.sp-back:hover {
+  color: #111;
+}
+
+.sp-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sp-list li {
+  margin-bottom: 8px;
+}
+
+.sp-list-row {
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #ececec;
+  border-radius: 8px;
+  padding: 12px 14px;
+  cursor: pointer;
+  font-family: inherit;
+  display: block;
+}
+
+.sp-list-row:hover {
+  background: #f7f7f7;
+  border-color: #ddd;
+}
+
+.sp-list-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-list-meta {
+  font-size: 11px;
+  color: #888;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.sp-status {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sp-status-done {
+  background: #def7ec;
+  color: #047857;
+}
+
+.sp-status-processing,
+.sp-status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.sp-status-failed,
+.sp-status-cancelled {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
 .sp-body {
   flex: 1;
   overflow-y: auto;

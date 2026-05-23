@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import uuid
+from pathlib import Path
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -16,6 +18,34 @@ from app.models import ActionItem, CalendarEvent, Meeting, Segment, Summary
 from app.storage import download_audio_to_tmp
 from app.summarize import TranscriptSegment, summarize_segments
 from app.transcription import transcribe_file
+
+
+def _normalize_to_wav(src: Path) -> Path:
+    """Re-encode any input to 16kHz mono WAV.
+
+    MediaRecorder webm files don't include duration metadata, which breaks
+    pyannote (it needs duration up-front to chunk). Whisper and pyannote both
+    work best on 16kHz mono WAV anyway, so we normalize unconditionally.
+    """
+    dst = src.with_suffix(".norm.wav")
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(src),
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            str(dst),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return dst
 
 
 async def _run_pipeline(meeting_id: uuid.UUID) -> None:
@@ -45,10 +75,14 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                 return
 
             audio_path = await download_audio_to_tmp(meeting.audio_url)
+            normalized_path: Path | None = None
             try:
                 try:
-                    transcription = await transcribe_file(audio_path)
-                    turns = await diarize_file(audio_path)
+                    normalized_path = await asyncio.to_thread(
+                        _normalize_to_wav, audio_path
+                    )
+                    transcription = await transcribe_file(normalized_path)
+                    turns = await diarize_file(normalized_path)
                     labeled = assign_speakers(transcription.segments, turns)
                     notes = await summarize_segments(
                         [
@@ -65,6 +99,8 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                     raise
             finally:
                 audio_path.unlink(missing_ok=True)
+                if normalized_path is not None:
+                    normalized_path.unlink(missing_ok=True)
 
             # Cancellation race: if the user cancelled while the pipeline ran,
             # the API already set status=cancelled. Don't overwrite their decision.

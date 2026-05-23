@@ -1,6 +1,53 @@
 import { config } from "../config";
 import { saveSession, sessionFromTokens, type Session } from "./session";
 
+type SupabaseTokenResponse = {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+};
+
+type SupabaseError = { error?: string; error_description?: string; msg?: string };
+
+export async function signInWithPassword(
+  email: string,
+  password: string
+): Promise<Session> {
+  const res = await fetch(
+    `${config.supabaseUrl}/auth/v1/token?grant_type=password`,
+    {
+      method: "POST",
+      headers: {
+        apikey: config.supabaseAnonKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, password }),
+    }
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let parsed: SupabaseError = {};
+    try {
+      parsed = JSON.parse(text);
+    } catch {}
+    const detail =
+      parsed.error_description ??
+      parsed.msg ??
+      parsed.error ??
+      text ??
+      "(no body)";
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  const data = (await res.json()) as SupabaseTokenResponse;
+  const session = sessionFromTokens(
+    data.access_token,
+    data.refresh_token,
+    data.expires_in
+  );
+  await saveSession(session);
+  return session;
+}
+
 export async function signInWithGoogle(): Promise<Session> {
   const redirectUri = chrome.identity.getRedirectURL();
   const authUrl =

@@ -25,7 +25,6 @@ export default defineManifest({
     "activeTab",
     "tabs",
     "scripting",
-    "downloads",
   ],
   host_permissions: [
     "http://localhost:8000/*",

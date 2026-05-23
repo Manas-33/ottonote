@@ -1,3 +1,55 @@
+import { config } from "../config";
+import type { Meeting } from "../api/meetings";
+import type { CaptureState } from "../state";
+
+// Offscreen docs have limited chrome.* access (chrome.storage can be missing
+// on some channels). Route state writes and token lookup through background.
+function setState(patch: Partial<CaptureState>): Promise<unknown> {
+  return chrome.runtime.sendMessage({ type: "ottonote/state-patch", patch });
+}
+
+async function getToken(): Promise<string> {
+  const res = (await chrome.runtime.sendMessage({
+    type: "ottonote/get-token",
+  })) as { token: string | null; error?: string };
+  if (!res?.token) throw new Error(res?.error ?? "Not signed in");
+  return res.token;
+}
+
+async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = await getToken();
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  return fetch(`${config.apiBaseUrl}${path}`, { ...init, headers });
+}
+
+async function jsonOrThrow<T>(res: Response, what: string): Promise<T> {
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`${what} failed (${res.status}): ${detail.slice(0, 200)}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function createMeeting(title: string): Promise<Meeting> {
+  const res = await apiFetch("/meetings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  return jsonOrThrow<Meeting>(res, "Create meeting");
+}
+
+async function processMeeting(meetingId: string, blob: Blob): Promise<Meeting> {
+  const form = new FormData();
+  form.append("file", blob, "meeting.webm");
+  const res = await apiFetch(`/meetings/${meetingId}/process`, {
+    method: "POST",
+    body: form,
+  });
+  return jsonOrThrow<Meeting>(res, "Process meeting");
+}
+
 let recorder: MediaRecorder | null = null;
 let stream: MediaStream | null = null;
 let audioCtx: AudioContext | null = null;
@@ -15,7 +67,6 @@ async function start(streamId: string) {
     video: false,
   });
 
-  // Pipe captured audio back to speakers so the user still hears the meeting.
   audioCtx = new AudioContext();
   audioCtx.createMediaStreamSource(stream).connect(audioCtx.destination);
 
@@ -27,8 +78,8 @@ async function start(streamId: string) {
   recorder.start(5000);
 }
 
-function stop() {
-  return new Promise<Blob | null>((resolve) => {
+function stopRecorder(): Promise<Blob | null> {
+  return new Promise((resolve) => {
     if (!recorder) {
       resolve(null);
       return;
@@ -47,14 +98,29 @@ function stop() {
   });
 }
 
-async function downloadBlob(blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const filename = `ottonote-${new Date()
-    .toISOString()
-    .replace(/[:.]/g, "-")}.webm`;
-  await chrome.downloads.download({ url, filename, saveAs: false });
-  // Revoke after a delay so the download has time to consume the URL.
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+async function stopAndUpload() {
+  const blob = await stopRecorder();
+  if (!blob || blob.size === 0) {
+    await setState({ state: "failed", lastEvent: "No audio captured" });
+    return;
+  }
+
+  const kb = Math.round(blob.size / 1024);
+  await setState({ state: "uploading", lastEvent: "Creating meeting…" });
+
+  const meeting = await createMeeting(
+    `Browser meeting ${new Date().toLocaleString()}`
+  );
+  await setState({
+    meetingId: meeting.id,
+    lastEvent: `Uploading ${kb} KB…`,
+  });
+
+  const processed = await processMeeting(meeting.id, blob);
+  await setState({
+    state: "processing",
+    lastEvent: `Processing (task ${processed.task_id?.slice(0, 8) ?? "?"})`,
+  });
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -68,12 +134,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "offscreen/stop") {
-    stop()
-      .then(async (blob) => {
-        if (blob && blob.size > 0) await downloadBlob(blob);
-        sendResponse({ ok: true, size: blob?.size ?? 0 });
-      })
-      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    stopAndUpload()
+      .then(() => sendResponse({ ok: true }))
+      .catch(async (err) => {
+        await setState({ state: "failed", lastEvent: `Error: ${String(err)}` });
+        sendResponse({ ok: false, error: String(err) });
+      });
     return true;
   }
 

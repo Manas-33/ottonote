@@ -79,6 +79,7 @@ All `/meetings*` endpoints require a Supabase JWT in `Authorization: Bearer <tok
 | DELETE | `/meetings/{id}` | required | Delete meeting (cascades to all children) |
 | POST | `/meetings/{id}/process` | required | Upload audio, enqueue pipeline (202, status=processing) |
 | DELETE | `/meetings/{id}/process` | required | Revoke in-flight pipeline (status=cancelled) |
+| PATCH | `/meetings/{id}/action_items/{item_id}` | required | Toggle action item status (`open` ↔ `done`) |
 | POST | `/transcribe` | dev only | (Set `DEV_MODE=true` in `.env`) |
 | POST | `/summarize` | dev only | (Set `DEV_MODE=true` in `.env`) |
 | POST | `/process` | dev only | (Set `DEV_MODE=true` in `.env`) |

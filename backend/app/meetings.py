@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.auth import CurrentUser, get_current_user
 from app.celery_app import celery_app
 from app.db import get_db
-from app.models import Meeting
+from app.models import ActionItem, Meeting
 from app.storage import delete_audio, storage_path_for, upload_audio
 from app.tasks import process_meeting_task
 
@@ -295,3 +295,46 @@ async def cancel_meeting_processing(
 
     fresh = await _fetch_meeting(meeting.id, user, db)
     return _to_detail(fresh)
+
+
+class ActionItemPatch(BaseModel):
+    status: str  # "open" | "done"
+
+
+@router.patch(
+    "/{meeting_id}/action_items/{item_id}",
+    response_model=ActionItemOut,
+)
+async def update_action_item(
+    meeting_id: uuid.UUID,
+    item_id: uuid.UUID,
+    body: ActionItemPatch,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ActionItemOut:
+    """Toggle an action item's status. Currently only `open` | `done` are accepted."""
+    if body.status not in ("open", "done"):
+        raise HTTPException(
+            status_code=422, detail="status must be 'open' or 'done'"
+        )
+
+    # Validate ownership: meeting must belong to user, item must belong to meeting.
+    await _fetch_meeting(meeting_id, user, db)
+    stmt = select(ActionItem).where(
+        ActionItem.id == item_id, ActionItem.meeting_id == meeting_id
+    )
+    item = (await db.execute(stmt)).scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Action item not found")
+
+    item.status = body.status
+    await db.commit()
+    await db.refresh(item)
+
+    return ActionItemOut(
+        id=item.id,
+        assignee=item.assignee,
+        task=item.task,
+        due_date=item.due_date,
+        status=item.status,
+    )

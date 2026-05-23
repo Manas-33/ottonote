@@ -27,6 +27,14 @@ class Settings(BaseSettings):
 
     supabase_storage_bucket: str = "meetings"
 
+    # CORS: comma-separated origins. Default "*" is fine because all auth is
+    # via Bearer tokens (no cookies / credentials). Lock down in production.
+    cors_origins: str = "*"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
     @property
     def async_database_url(self) -> str:
         """SQLAlchemy expects postgresql+asyncpg:// for async, regardless of what's in .env."""

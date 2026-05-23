@@ -2,6 +2,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.config import settings
@@ -12,6 +13,16 @@ from app.summarize import MeetingNotes, TranscriptSegment, summarize_segments
 from app.transcription import transcribe_file
 
 app = FastAPI(title="OttoNote Backend", version="0.2.0")
+
+# No allow_credentials=True — auth is Bearer tokens, not cookies. That lets us
+# safely use "*" in dev without browsers refusing to send the request.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(meetings_router)
 
 

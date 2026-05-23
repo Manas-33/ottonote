@@ -189,6 +189,7 @@ function MeetingView({
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const resumeAtRef = useRef<{ time: number; play: boolean } | null>(null);
 
   // Fetch a fresh signed URL whenever the meeting changes.
   useEffect(() => {
@@ -205,6 +206,36 @@ function MeetingView({
       cancelled = true;
     };
   }, [meeting.id, meeting.status]);
+
+  // Restore playback position after a URL refresh.
+  const handleLoadedMetadata = () => {
+    const audio = audioRef.current;
+    const resume = resumeAtRef.current;
+    if (audio && resume) {
+      audio.currentTime = resume.time;
+      if (resume.play) audio.play().catch(() => {});
+      resumeAtRef.current = null;
+    }
+  };
+
+  const handleAudioError = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    // The signed URL almost certainly expired (1h TTL). Remember where we
+    // were, fetch a new URL, and resume after the next loadedmetadata.
+    resumeAtRef.current = {
+      time: audio.currentTime || 0,
+      play: !audio.paused,
+    };
+    getAudioUrl(meeting.id)
+      .then(({ url }) => {
+        setAudioUrl(url);
+        setAudioError(null);
+      })
+      .catch((err) => {
+        setAudioError(err instanceof Error ? err.message : String(err));
+      });
+  };
 
   const seekTo = (seconds: number) => {
     const audio = audioRef.current;
@@ -256,6 +287,8 @@ function MeetingView({
               src={audioUrl}
               controls
               onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              onLoadedMetadata={handleLoadedMetadata}
+              onError={handleAudioError}
             />
           ) : audioError ? (
             <p className="empty error">Audio unavailable: {audioError}</p>

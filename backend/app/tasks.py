@@ -56,6 +56,12 @@ async def _run_pipeline(meeting_id: uuid.UUID, audio_path: Path) -> None:
                 await db.commit()
                 raise
 
+            # Cancellation race: if the user cancelled while the pipeline ran,
+            # the API already set status=cancelled. Don't overwrite their decision.
+            await db.refresh(meeting, attribute_names=["status"])
+            if meeting.status == "cancelled":
+                return
+
             meeting.duration_sec = transcription.duration
             meeting.language = transcription.language
             meeting.num_speakers = len({t.speaker for t in turns})

@@ -36,7 +36,7 @@ class Meeting(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, nullable=False)
     title: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
-    # pending | processing | done | failed
+    # pending | processing | done | failed | cancelled
     duration_sec: Mapped[float | None] = mapped_column(Float)
     language: Mapped[str | None] = mapped_column(String(10))
     num_speakers: Mapped[int | None] = mapped_column(Integer)

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth import CurrentUser, get_current_user
+from app.celery_app import celery_app
 from app.db import get_db
 from app.models import Meeting
 from app.tasks import process_meeting_task
@@ -244,6 +245,36 @@ async def process_meeting(
 
     async_result = process_meeting_task.delay(str(meeting.id), str(tmp_path))
     meeting.task_id = async_result.id
+    await db.commit()
+
+    fresh = await _fetch_meeting(meeting.id, user, db)
+    return _to_detail(fresh)
+
+
+@router.delete(
+    "/{meeting_id}/process",
+    response_model=MeetingDetail,
+)
+async def cancel_meeting_processing(
+    meeting_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MeetingDetail:
+    """Cancel an in-flight pipeline. Revokes the Celery task and marks status=cancelled."""
+    meeting = await _fetch_meeting(meeting_id, user, db)
+    if meeting.status != "processing":
+        raise HTTPException(
+            status_code=409, detail=f"Meeting is not processing (status={meeting.status})"
+        )
+
+    if meeting.task_id:
+        # terminate=True kills a running task on prefork pool; on --pool=solo
+        # this restarts the whole worker. Queued-but-not-started tasks are
+        # dropped cleanly in both cases.
+        celery_app.control.revoke(meeting.task_id, terminate=True)
+
+    meeting.status = "cancelled"
+    meeting.error_message = "Cancelled by user"
     await db.commit()
 
     fresh = await _fetch_meeting(meeting.id, user, db)

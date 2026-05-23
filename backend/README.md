@@ -27,7 +27,7 @@ curl http://localhost:8000/health
 
 - [x] Step 1: Project scaffold + `/health`
 - [x] Step 2: `/transcribe` — faster-whisper on uploaded audio
-- [ ] Step 3: Diarization merge (pyannote)
+- [x] Step 3: Diarization merge (pyannote `community-1`, speaker labels per segment)
 - [ ] Step 4: `/summarize` — Claude structured output
 - [ ] Step 5: `/process` — full pipeline end-to-end
 

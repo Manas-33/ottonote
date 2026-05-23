@@ -23,6 +23,8 @@ class Settings(BaseSettings):
 
     dev_mode: bool = False
 
+    redis_url: str = "redis://localhost:6379/0"
+
     @property
     def async_database_url(self) -> str:
         """SQLAlchemy expects postgresql+asyncpg:// for async, regardless of what's in .env."""

@@ -14,11 +14,8 @@ from sqlalchemy.orm import selectinload
 
 from app.auth import CurrentUser, get_current_user
 from app.db import get_db
-from app.diarization import diarize_file
-from app.merge import assign_speakers
-from app.models import ActionItem, CalendarEvent, Meeting, Segment, Summary
-from app.summarize import TranscriptSegment, summarize_segments
-from app.transcription import transcribe_file
+from app.models import Meeting
+from app.tasks import process_meeting_task
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -217,21 +214,21 @@ async def delete_meeting(
     await db.commit()
 
 
-@router.post("/{meeting_id}/process", response_model=MeetingDetail)
+@router.post(
+    "/{meeting_id}/process",
+    response_model=MeetingDetail,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def process_meeting(
     meeting_id: uuid.UUID,
     file: UploadFile = File(...),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> MeetingDetail:
-    """Upload audio for an existing meeting and run the full pipeline."""
+    """Upload audio and enqueue the pipeline. Returns immediately with status=processing."""
     meeting = await _fetch_meeting(meeting_id, user, db)
     if meeting.status == "processing":
         raise HTTPException(status_code=409, detail="Meeting is already processing")
-
-    meeting.status = "processing"
-    meeting.error_message = None
-    await db.commit()
 
     suffix = Path(file.filename or "audio").suffix or ".wav"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -239,74 +236,11 @@ async def process_meeting(
         while chunk := await file.read(1024 * 1024):
             tmp.write(chunk)
 
-    try:
-        transcription = await transcribe_file(tmp_path)
-        turns = await diarize_file(tmp_path)
-        labeled = assign_speakers(transcription.segments, turns)
-        notes = await summarize_segments(
-            [
-                TranscriptSegment(
-                    start=s.start, end=s.end, text=s.text, speaker=s.speaker
-                )
-                for s in labeled
-            ]
-        )
-    except Exception as e:
-        meeting.status = "failed"
-        meeting.error_message = str(e)[:500]
-        await db.commit()
-        raise HTTPException(status_code=500, detail=f"Pipeline failed: {e}") from e
-    finally:
-        tmp_path.unlink(missing_ok=True)
-
-    # Persist everything
-    meeting.duration_sec = transcription.duration
-    meeting.language = transcription.language
-    meeting.num_speakers = len({t.speaker for t in turns})
-    meeting.status = "done"
-
-    for idx, seg in enumerate(labeled):
-        db.add(
-            Segment(
-                meeting_id=meeting.id,
-                idx=idx,
-                start_sec=seg.start,
-                end_sec=seg.end,
-                speaker=seg.speaker,
-                text=seg.text,
-            )
-        )
-
-    db.add(
-        Summary(
-            meeting_id=meeting.id,
-            summary=notes.summary,
-            decisions=notes.decisions,
-            keywords=notes.keywords_by_category,
-            follow_ups=notes.follow_ups,
-        )
-    )
-    for item in notes.action_items:
-        db.add(
-            ActionItem(
-                meeting_id=meeting.id,
-                assignee=item.assignee,
-                task=item.task,
-                due_date=item.due_date,
-            )
-        )
-    for ev in notes.calendar_events:
-        db.add(
-            CalendarEvent(
-                meeting_id=meeting.id,
-                title=ev.title,
-                when_text=ev.datetime,
-                description=ev.description,
-            )
-        )
-
-    meeting_id_str = meeting.id  # cache before expire_all blows away attributes
+    meeting.status = "processing"
+    meeting.error_message = None
     await db.commit()
-    db.expire_all()
-    fresh = await _fetch_meeting(meeting_id_str, user, db)
+
+    process_meeting_task.delay(str(meeting.id), str(tmp_path))
+
+    fresh = await _fetch_meeting(meeting.id, user, db)
     return _to_detail(fresh)

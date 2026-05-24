@@ -9,7 +9,7 @@
     height: 100%;
   }
   body {
-    margin: 0;
+    @apply m-0 text-paper-900 dark:text-paper-50 antialiased;
   }
 }
 

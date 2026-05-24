@@ -1,31 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  deleteMeeting,
-  getAudioUrl,
-  getMeeting,
-  listMeetings,
-  toggleActionItem,
-  updateMeeting,
-  type ActionItem,
-  type Meeting,
-  type MeetingSummaryRow,
-} from "../api/meetings";
+import { getMeeting } from "../api/meetings";
 import { clearSession, loadSession, type Session } from "../auth/session";
-import { signInWithPassword } from "../auth/login";
-import { cancelMeeting } from "../api/meetings";
-import { resetState } from "../state";
-import { downloadMarkdown, openPrintable } from "../lib/exports";
-import { STATE_KEY, type CaptureState } from "../state";
-
-type View = "list" | string; // "list" or a meeting id
+import { setState, STATE_KEY, type CaptureState } from "../state";
+import { initialsFromEmail } from "./format";
+import { Idle } from "./screens/Idle";
+import { MeetingDetail } from "./screens/MeetingDetail";
+import { Processing } from "./screens/Processing";
+import { Recording } from "./screens/Recording";
+import { SignedOut } from "./screens/SignedOut";
+import { Uploading } from "./screens/Uploading";
 
 export function SidePanel() {
   const [session, setSession] = useState<Session | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [snapshot, setSnapshot] = useState<CaptureState>({ state: "idle" });
-  // null = follow the in-flight capture; string/list = explicit user choice.
-  const [userView, setUserView] = useState<View | null>(null);
+  // null = follow capture state; string = user clicked a library row.
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
 
+  // ---- session ----
   useEffect(() => {
     loadSession().then((s) => {
       setSession(s);
@@ -33,11 +25,14 @@ export function SidePanel() {
     });
   }, []);
 
+  // ---- capture-state subscription ----
   useEffect(() => {
     chrome.storage.local.get(STATE_KEY).then(({ [STATE_KEY]: s }) => {
       if (s) setSnapshot(s);
     });
-    const onChange = (changes: Record<string, chrome.storage.StorageChange>) => {
+    const onChange = (
+      changes: Record<string, chrome.storage.StorageChange>
+    ) => {
       if (changes[STATE_KEY]) {
         setSnapshot(changes[STATE_KEY].newValue ?? { state: "idle" });
       }
@@ -46,803 +41,138 @@ export function SidePanel() {
     return () => chrome.storage.onChanged.removeListener(onChange);
   }, []);
 
-  // When a new recording starts, clear any user override so we auto-follow
-  // the new meeting.
-  const prevStateRef = useRef<string | undefined>();
+  // ---- auto-follow new captures ----
+  // When a recording starts, drop any pinned meeting so the user's screen
+  // tracks the in-flight capture rather than the meeting they were viewing.
+  const prevState = useRef<CaptureState["state"] | undefined>();
   useEffect(() => {
-    const prev = prevStateRef.current;
-    prevStateRef.current = snapshot.state;
+    const prev = prevState.current;
+    prevState.current = snapshot.state;
     if (snapshot.state === "recording" && prev !== "recording") {
-      setUserView(null);
+      setPinnedId(null);
     }
   }, [snapshot.state]);
 
-  if (!authChecked) {
-    return (
-      <Shell>
-        <p className="empty">Loading…</p>
-      </Shell>
-    );
-  }
-
-  if (!session) {
-    return (
-      <Shell>
-        <LoginForm onSignedIn={setSession} />
-      </Shell>
-    );
-  }
-
-  // Effective view: explicit user choice wins, otherwise follow the capture.
-  const effective: View =
-    userView ?? (snapshot.meetingId ? snapshot.meetingId : "list");
-
-  if (effective === "list") {
-    return (
-      <Shell>
-        <RecordControls snapshot={snapshot} onSignOut={() => setSession(null)} />
-        <MeetingList onSelect={(id) => setUserView(id)} />
-      </Shell>
-    );
-  }
-
-  return (
-    <Shell
-      back={() => setUserView("list")}
-      backLabel="Meetings"
-    >
-      <MeetingDetail
-        meetingId={effective}
-        snapshot={snapshot}
-        onDeleted={() => setUserView("list")}
-      />
-    </Shell>
-  );
-}
-
-function Shell({
-  children,
-  back,
-  backLabel,
-}: {
-  children: React.ReactNode;
-  back?: () => void;
-  backLabel?: string;
-}) {
-  return (
-    <div className="sidepanel">
-      <header className="sp-header">
-        {back ? (
-          <button className="sp-back" onClick={back}>
-            ← {backLabel ?? "Back"}
-          </button>
-        ) : (
-          <h1>OttoNote</h1>
-        )}
-      </header>
-      <div className="sp-body">{children}</div>
-    </div>
-  );
-}
-
-function MeetingList({ onSelect }: { onSelect: (id: string) => void }) {
-  const [rows, setRows] = useState<MeetingSummaryRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-
+  // ---- terminal-state promotion ----
+  // The Processing screen is shown while snapshot.state="processing". Backend
+  // doesn't notify us when transcription finishes, so we poll the meeting and
+  // bump the capture state forward when it terminates.
   useEffect(() => {
+    if (snapshot.state !== "processing" || !snapshot.meetingId) return;
+    const meetingId = snapshot.meetingId;
     let cancelled = false;
-    const load = () => {
-      listMeetings()
-        .then((rs) => {
-          if (!cancelled) {
-            setRows(rs);
-            setError(null);
-          }
-        })
-        .catch((err) => {
-          if (!cancelled)
-            setError(err instanceof Error ? err.message : String(err));
-        });
+    const tick = async () => {
+      try {
+        const m = await getMeeting(meetingId);
+        if (cancelled) return;
+        if (
+          m.status === "done" ||
+          m.status === "failed" ||
+          m.status === "cancelled"
+        ) {
+          await setState({
+            state: m.status === "done" ? "done" : "failed",
+            lastEvent:
+              m.status === "done"
+                ? "Done"
+                : m.error_message ?? `Status: ${m.status}`,
+          });
+        }
+      } catch {
+        /* try again next tick */
+      }
     };
-    load();
-    const handle = window.setInterval(load, 5000);
+    tick();
+    const handle = window.setInterval(tick, 3000);
     return () => {
       cancelled = true;
       window.clearInterval(handle);
     };
-  }, []);
+  }, [snapshot.state, snapshot.meetingId]);
 
-  const handleDelete = async (id: string, title: string | null) => {
-    const label = title ?? "this meeting";
-    if (!window.confirm(`Delete "${label}"? This cannot be undone.`)) return;
-    const before = rows;
-    // Optimistic remove.
-    setRows((rs) => rs?.filter((r) => r.id !== id) ?? rs);
-    try {
-      await deleteMeeting(id);
-    } catch (err) {
-      console.error(err);
-      setRows(before ?? null);
-      window.alert(
-        `Delete failed: ${err instanceof Error ? err.message : String(err)}`
-      );
-    }
-  };
+  const initials = session ? initialsFromEmail(session.email) : undefined;
 
-  if (error) return <p className="empty error">{error}</p>;
-  if (!rows) return <p className="empty">Loading…</p>;
-  if (rows.length === 0) {
-    return (
-      <p className="empty">
-        No meetings yet. Click the OttoNote icon to start recording.
-      </p>
-    );
-  }
-
-  const q = query.trim().toLowerCase();
-  const filtered = q
-    ? rows.filter((m) => (m.title ?? "").toLowerCase().includes(q))
-    : rows;
-
-  return (
-    <>
-      <input
-        type="search"
-        className="sp-search"
-        placeholder="Search meetings…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
-      {filtered.length === 0 ? (
-        <p className="empty">No meetings match "{query}".</p>
-      ) : (
-        <ul className="sp-list">
-          {filtered.map((m) => (
-            <li key={m.id} className="sp-list-item">
-              <button className="sp-list-row" onClick={() => onSelect(m.id)}>
-                <div className="sp-list-title">
-                  {m.title ?? "Untitled meeting"}
-                </div>
-                <div className="sp-list-meta">
-                  <span className={`sp-status sp-status-${m.status}`}>
-                    {m.status}
-                  </span>
-                  {m.duration_sec != null && (
-                    <span> · {formatDuration(m.duration_sec)}</span>
-                  )}
-                  <span> · {formatRelative(m.created_at)}</span>
-                </div>
-              </button>
-              <button
-                className="sp-list-delete"
-                title="Delete meeting"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(m.id, m.title);
-                }}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
-  );
-}
-
-function MeetingDetail({
-  meetingId,
-  snapshot,
-  onDeleted,
-}: {
-  meetingId: string;
-  snapshot: CaptureState;
-  onDeleted: () => void;
-}) {
-  const [meeting, setMeeting] = useState<Meeting | null>(null);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const m = await getMeeting(meetingId);
-        if (cancelled) return;
-        setMeeting(m);
-        setFetchError(null);
-        // Promote terminal backend status into shared capture state if this
-        // meeting matches the in-flight capture.
-        if (
-          snapshot.meetingId === meetingId &&
-          snapshot.state === "processing" &&
-          (m.status === "done" || m.status === "failed" || m.status === "cancelled")
-        ) {
-          await chrome.storage.local.set({
-            [STATE_KEY]: {
-              ...snapshot,
-              state: m.status === "done" ? "done" : "failed",
-              lastEvent:
-                m.status === "done"
-                  ? "Done"
-                  : m.error_message ?? `Status: ${m.status}`,
-            },
-          });
-        }
-      } catch (err) {
-        if (!cancelled)
-          setFetchError(err instanceof Error ? err.message : String(err));
-      }
-    };
-    load();
-    // Poll while this meeting is the one being processed.
-    if (snapshot.meetingId === meetingId && snapshot.state === "processing") {
-      const handle = window.setInterval(load, 3000);
-      return () => {
-        cancelled = true;
-        window.clearInterval(handle);
-      };
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [meetingId, snapshot.state, snapshot.meetingId]);
-
-  // While we're recording the current target, the meeting doesn't exist yet
-  // (createMeeting fires on stop). Show a friendly placeholder.
-  if (snapshot.meetingId === meetingId && snapshot.state === "recording") {
-    return (
-      <p className="empty">
-        Recording in progress. Results will appear here once processing finishes.
-      </p>
-    );
-  }
-
-  if (
-    snapshot.meetingId === meetingId &&
-    (snapshot.state === "uploading" || snapshot.state === "processing") &&
-    !meeting
-  ) {
-    return <p className="empty">{snapshot.lastEvent ?? "Processing…"}</p>;
-  }
-
-  if (fetchError) {
-    return <p className="empty error">Couldn't load meeting: {fetchError}</p>;
-  }
-
-  if (!meeting) {
-    return <p className="empty">Loading meeting…</p>;
-  }
-
-  return (
-    <MeetingView
-      meeting={meeting}
-      onActionItemToggle={(item, status) => {
-        setMeeting((prev) =>
-          prev
-            ? {
-                ...prev,
-                action_items: prev.action_items.map((a) =>
-                  a.id === item.id ? { ...a, status } : a
-                ),
-              }
-            : prev
-        );
-        toggleActionItem(meeting.id, item.id, status).catch((err) => {
-          console.error(err);
-          setMeeting((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  action_items: prev.action_items.map((a) =>
-                    a.id === item.id ? { ...a, status: item.status } : a
-                  ),
-                }
-              : prev
-          );
-        });
-      }}
-      onTitleSave={async (newTitle) => {
-        const trimmed = newTitle.trim();
-        // Optimistic update.
-        setMeeting((prev) => (prev ? { ...prev, title: trimmed || null } : prev));
-        try {
-          const updated = await updateMeeting(meeting.id, { title: trimmed });
-          setMeeting(updated);
-        } catch (err) {
-          console.error(err);
-          setMeeting(meeting); // revert
-          window.alert(
-            `Couldn't save title: ${
-              err instanceof Error ? err.message : String(err)
-            }`
-          );
-        }
-      }}
-      onDelete={async () => {
-        const label = meeting.title ?? "this meeting";
-        if (!window.confirm(`Delete "${label}"? This cannot be undone.`)) return;
-        try {
-          await deleteMeeting(meeting.id);
-          onDeleted();
-        } catch (err) {
-          console.error(err);
-          window.alert(
-            `Delete failed: ${err instanceof Error ? err.message : String(err)}`
-          );
-        }
-      }}
-    />
-  );
-}
-
-function MeetingView({
-  meeting,
-  onActionItemToggle,
-  onTitleSave,
-  onDelete,
-}: {
-  meeting: Meeting;
-  onActionItemToggle: (item: ActionItem, status: "open" | "done") => void;
-  onTitleSave: (newTitle: string) => void;
-  onDelete: () => void;
-}) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [audioError, setAudioError] = useState<string | null>(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const resumeAtRef = useRef<{ time: number; play: boolean } | null>(null);
-  const [editingTitle, setEditingTitle] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (meeting.status !== "done") return;
-    let cancelled = false;
-    getAudioUrl(meeting.id)
-      .then(({ url }) => {
-        if (!cancelled) setAudioUrl(url);
-      })
-      .catch((err) => {
-        if (!cancelled)
-          setAudioError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [meeting.id, meeting.status]);
-
-  const handleLoadedMetadata = () => {
-    const audio = audioRef.current;
-    const resume = resumeAtRef.current;
-    if (audio && resume) {
-      audio.currentTime = resume.time;
-      if (resume.play) audio.play().catch(() => {});
-      resumeAtRef.current = null;
-    }
-  };
-
-  const handleAudioError = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    resumeAtRef.current = {
-      time: audio.currentTime || 0,
-      play: !audio.paused,
-    };
-    getAudioUrl(meeting.id)
-      .then(({ url }) => {
-        setAudioUrl(url);
-        setAudioError(null);
-      })
-      .catch((err) => {
-        setAudioError(err instanceof Error ? err.message : String(err));
-      });
-  };
-
-  const seekTo = (seconds: number) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = seconds;
-    audio.play().catch(() => {});
-  };
-
-  const activeIdx = meeting.segments.findIndex(
-    (s) => currentTime >= s.start_sec && currentTime < s.end_sec
-  );
-
-  return (
-    <>
-      <section className="sp-meta">
-        {editingTitle !== null ? (
-          <input
-            className="sp-title-input"
-            value={editingTitle}
-            autoFocus
-            onChange={(e) => setEditingTitle(e.target.value)}
-            onBlur={() => {
-              if (editingTitle !== (meeting.title ?? "")) {
-                onTitleSave(editingTitle);
-              }
-              setEditingTitle(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.currentTarget.blur();
-              } else if (e.key === "Escape") {
-                setEditingTitle(null);
-              }
-            }}
-          />
-        ) : (
-          <h2
-            className="sp-title sp-title-clickable"
-            title="Click to edit"
-            onClick={() => setEditingTitle(meeting.title ?? "")}
-          >
-            {meeting.title ?? "Untitled meeting"}
-          </h2>
-        )}
-        <div className="sp-metabar">
-          <Badge>{meeting.status}</Badge>
-          {meeting.duration_sec != null && (
-            <Badge>{formatDuration(meeting.duration_sec)}</Badge>
-          )}
-          {meeting.language && <Badge>{meeting.language}</Badge>}
-          {meeting.num_speakers != null && (
-            <Badge>
-              {meeting.num_speakers} speaker
-              {meeting.num_speakers === 1 ? "" : "s"}
-            </Badge>
-          )}
-        </div>
-        <div className="sp-exports">
-          {meeting.status === "done" && (
-            <>
-              <button onClick={() => downloadMarkdown(meeting)}>
-                Export markdown
-              </button>
-              <button onClick={() => openPrintable(meeting)}>Save as PDF</button>
-            </>
-          )}
-          <button className="sp-danger" onClick={onDelete}>
-            Delete
-          </button>
-        </div>
-      </section>
-
-      {meeting.status === "done" && (
-        <div className="sp-audio">
-          {audioUrl ? (
-            <audio
-              ref={audioRef}
-              src={audioUrl}
-              controls
-              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-              onLoadedMetadata={handleLoadedMetadata}
-              onError={handleAudioError}
-            />
-          ) : audioError ? (
-            <p className="empty error">Audio unavailable: {audioError}</p>
-          ) : (
-            <p className="empty">Loading audio…</p>
-          )}
-        </div>
-      )}
-
-      {meeting.summary && (
-        <Card title="Summary">
-          <p>{meeting.summary.summary}</p>
-          {meeting.summary.decisions.length > 0 && (
-            <>
-              <h4>Decisions</h4>
-              <ul>
-                {meeting.summary.decisions.map((d, i) => (
-                  <li key={i}>{d}</li>
-                ))}
-              </ul>
-            </>
-          )}
-          {meeting.summary.follow_ups.length > 0 && (
-            <>
-              <h4>Follow-ups</h4>
-              <ul>
-                {meeting.summary.follow_ups.map((f, i) => (
-                  <li key={i}>{f}</li>
-                ))}
-              </ul>
-            </>
-          )}
-        </Card>
-      )}
-
-      {meeting.action_items.length > 0 && (
-        <Card title="Action items">
-          <ul className="sp-action-list">
-            {meeting.action_items.map((a) => (
-              <li key={a.id}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={a.status === "done"}
-                    onChange={(e) =>
-                      onActionItemToggle(a, e.target.checked ? "done" : "open")
-                    }
-                  />
-                  <span className={a.status === "done" ? "done" : undefined}>
-                    <strong>{a.assignee}:</strong> {a.task}
-                    {a.due_date && <span className="due"> · {a.due_date}</span>}
-                  </span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
-
-      {meeting.summary && Object.keys(meeting.summary.keywords).length > 0 && (
-        <Card title="Keywords">
-          {Object.entries(meeting.summary.keywords).map(([category, words]) => (
-            <div className="sp-keyword-group" key={category}>
-              <h4>{category}</h4>
-              <div className="sp-chips">
-                {words.map((w, i) => (
-                  <span className="sp-chip" key={i}>
-                    {w}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </Card>
-      )}
-
-      {meeting.calendar_events.length > 0 && (
-        <Card title="Calendar events">
-          <ul>
-            {meeting.calendar_events.map((c) => (
-              <li key={c.id}>
-                <strong>{c.title}</strong>
-                <span className="due"> · {c.when_text}</span>
-                {c.description && <p>{c.description}</p>}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
-
-      {meeting.segments.length > 0 && (
-        <Card title="Transcript">
-          <div className="sp-transcript">
-            {meeting.segments.map((s) => (
-              <div
-                className={
-                  "sp-turn" + (s.idx === activeIdx ? " sp-turn-active" : "")
-                }
-                key={s.idx}
-                onClick={() => seekTo(s.start_sec)}
-                role="button"
-                tabIndex={0}
-              >
-                <div
-                  className="sp-speaker"
-                  style={{ color: speakerColor(s.speaker) }}
-                >
-                  {s.speaker ?? "Unknown"} · {formatDuration(s.start_sec)}
-                </div>
-                <div className="sp-text">{s.text}</div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-    </>
-  );
-}
-
-function Card({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="sp-card">
-      <h3>{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function Badge({ children }: { children: React.ReactNode }) {
-  return <span className="sp-badge">{children}</span>;
-}
-
-function formatDuration(seconds: number): string {
-  const total = Math.round(seconds);
-  const m = Math.floor(total / 60)
-    .toString()
-    .padStart(2, "0");
-  const s = (total % 60).toString().padStart(2, "0");
-  return `${m}:${s}`;
-}
-
-function formatRelative(iso: string): string {
-  const then = new Date(iso).getTime();
-  const diff = Math.max(0, Date.now() - then);
-  const min = 60 * 1000;
-  const hour = 60 * min;
-  const day = 24 * hour;
-  if (diff < min) return "just now";
-  if (diff < hour) return `${Math.floor(diff / min)}m ago`;
-  if (diff < day) return `${Math.floor(diff / hour)}h ago`;
-  if (diff < 7 * day) return `${Math.floor(diff / day)}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
-
-const PALETTE = [
-  "#1d4ed8",
-  "#15803d",
-  "#b45309",
-  "#9333ea",
-  "#be123c",
-  "#0e7490",
-];
-
-function speakerColor(speaker: string | null): string {
-  if (!speaker) return "#666";
-  let hash = 0;
-  for (let i = 0; i < speaker.length; i++) {
-    hash = (hash * 31 + speaker.charCodeAt(i)) | 0;
-  }
-  return PALETTE[Math.abs(hash) % PALETTE.length];
-}
-
-// ===========================================================================
-// Stopgap controls (Phase A). Phase B replaces these with the proper screens.
-// ===========================================================================
-
-function LoginForm({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const s = await signInWithPassword(email, password);
-      onSignedIn(s);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form onSubmit={submit} className="sp-login">
-      <h2>Sign in</h2>
-      <input
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        required
-        autoFocus
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        required
-      />
-      <button className="sp-login-submit" type="submit" disabled={busy}>
-        {busy ? "Signing in…" : "Sign in"}
-      </button>
-      {error && <p className="empty error">{error}</p>}
-    </form>
-  );
-}
-
-function RecordControls({
-  snapshot,
-  onSignOut,
-}: {
-  snapshot: CaptureState;
-  onSignOut: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const timer = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (snapshot.state === "recording" && snapshot.startedAt) {
-      const tick = () =>
-        setElapsed(Math.floor((Date.now() - snapshot.startedAt!) / 1000));
-      tick();
-      timer.current = window.setInterval(tick, 1000);
-      return () => {
-        if (timer.current) window.clearInterval(timer.current);
-      };
-    }
-    setElapsed(0);
-  }, [snapshot.state, snapshot.startedAt]);
-
-  const start = async () => {
-    setBusy(true);
-    await chrome.runtime.sendMessage({ type: "ottonote/start" });
-    setBusy(false);
-  };
-  const stop = async () => {
-    setBusy(true);
-    await chrome.runtime.sendMessage({ type: "ottonote/stop" });
-    setBusy(false);
-  };
-  const cancel = async () => {
-    setBusy(true);
-    try {
-      if (snapshot.meetingId) {
-        try {
-          await cancelMeeting(snapshot.meetingId);
-        } catch {
-          /* ignore */
-        }
-      }
-      await resetState();
-    } finally {
-      setBusy(false);
-    }
-  };
   const signOut = async () => {
     await clearSession();
-    onSignOut();
+    setSession(null);
   };
 
-  const recording = snapshot.state === "recording";
-  const inFlight =
-    snapshot.state === "uploading" || snapshot.state === "processing";
+  const startRecording = () => {
+    chrome.runtime.sendMessage({ type: "ottonote/start" });
+  };
 
-  return (
-    <div className="sp-controls">
-      {recording ? (
-        <>
-          <span className="sp-controls-timer">{formatElapsed(elapsed)}</span>
-          <button
-            className="sp-controls-stop"
-            onClick={stop}
-            disabled={busy}
-          >
-            Stop
-          </button>
-        </>
-      ) : inFlight ? (
-        <>
-          <span className="sp-controls-status">
-            {snapshot.lastEvent ?? "Working…"}
-          </span>
-          <button className="sp-controls-cancel" onClick={cancel} disabled={busy}>
-            Cancel
-          </button>
-        </>
-      ) : (
-        <button className="sp-controls-start" onClick={start} disabled={busy}>
-          + Start recording
-        </button>
-      )}
-      <button className="sp-controls-signout" onClick={signOut} title="Sign out">
-        ↪
-      </button>
-    </div>
-  );
+  const exitDetail = async () => {
+    setPinnedId(null);
+    // If we're viewing the just-finished capture, end its lifecycle so the
+    // next Idle render doesn't re-route us back into MeetingDetail.
+    if (snapshot.state === "done" || snapshot.state === "failed") {
+      await chrome.storage.local.set({ [STATE_KEY]: { state: "idle" } });
+    }
+  };
+
+  // ---- routing ----
+
+  if (!authChecked) return <Bootstrapping />;
+  if (!session) return <SignedOut onSignedIn={setSession} />;
+
+  // Pinned meeting wins over capture (except during active recording, which
+  // the auto-follow effect above already enforces by clearing the pin).
+  if (pinnedId) {
+    return (
+      <MeetingDetail
+        meetingId={pinnedId}
+        onBack={exitDetail}
+        onDeleted={exitDetail}
+      />
+    );
+  }
+
+  switch (snapshot.state) {
+    case "recording":
+      return <Recording snapshot={snapshot} initials={initials} />;
+    case "uploading":
+      return <Uploading snapshot={snapshot} initials={initials} />;
+    case "processing":
+      return <Processing snapshot={snapshot} initials={initials} />;
+    case "done":
+    case "failed":
+      if (snapshot.meetingId) {
+        return (
+          <MeetingDetail
+            meetingId={snapshot.meetingId}
+            onBack={exitDetail}
+            onDeleted={exitDetail}
+          />
+        );
+      }
+      // Fall through to Idle when no meetingId (start itself failed).
+      return (
+        <Idle
+          session={session}
+          onStart={startRecording}
+          onOpenMeeting={setPinnedId}
+          onSignOut={signOut}
+        />
+      );
+    case "idle":
+    default:
+      return (
+        <Idle
+          session={session}
+          onStart={startRecording}
+          onOpenMeeting={setPinnedId}
+          onSignOut={signOut}
+        />
+      );
+  }
 }
 
-function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-    .toString()
-    .padStart(2, "0");
-  const s = (seconds % 60).toString().padStart(2, "0");
-  return `${m}:${s}`;
+function Bootstrapping() {
+  return (
+    <div className="h-full flex items-center justify-center bg-paper-50 dark:bg-paper-950">
+      <p className="text-[12.5px] text-paper-500 dark:text-paper-400">
+        Loading…
+      </p>
+    </div>
+  );
 }

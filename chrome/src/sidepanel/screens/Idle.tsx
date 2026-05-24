@@ -15,6 +15,8 @@ import {
 } from "../format";
 import { Icon, PanelMast, StatusChip } from "../ui";
 
+const NEEDS_TOOLBAR_CLICK_KEY = "ottonote/needs-toolbar-click";
+
 type Group = { label: string; rows: MeetingSummaryRow[] };
 
 export function Idle({
@@ -30,6 +32,10 @@ export function Idle({
 }) {
   const [rows, setRows] = useState<MeetingSummaryRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // True when the user opened the side panel via the in-page toast. In that
+  // path Chrome did NOT grant activeTab, so tabCapture will fail until they
+  // click the toolbar icon. Cleared by the background on action.onClicked.
+  const [needsToolbarClick, setNeedsToolbarClick] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +58,21 @@ export function Idle({
       cancelled = true;
       window.clearInterval(handle);
     };
+  }, []);
+
+  useEffect(() => {
+    chrome.storage.local.get(NEEDS_TOOLBAR_CLICK_KEY).then((r) => {
+      setNeedsToolbarClick(!!r[NEEDS_TOOLBAR_CLICK_KEY]);
+    });
+    const onChange = (
+      changes: Record<string, chrome.storage.StorageChange>
+    ) => {
+      if (changes[NEEDS_TOOLBAR_CLICK_KEY]) {
+        setNeedsToolbarClick(!!changes[NEEDS_TOOLBAR_CLICK_KEY].newValue);
+      }
+    };
+    chrome.storage.onChanged.addListener(onChange);
+    return () => chrome.storage.onChanged.removeListener(onChange);
   }, []);
 
   const groups = useMemo<Group[]>(() => groupByRecency(rows ?? []), [rows]);
@@ -81,6 +102,23 @@ export function Idle({
           {greeting(now)}, {firstNameFromEmail(session.email)}.
         </h1>
       </div>
+
+      {needsToolbarClick && (
+        <div className="px-5 mt-3">
+          <div className="rounded-xl border border-flame-300 dark:border-flame-700/60 bg-flame-50 dark:bg-flame-950/40 px-3.5 py-2.5 flex items-start gap-2.5">
+            <Icon
+              name="info"
+              size={14}
+              className="text-flame-600 dark:text-flame-400 mt-0.5 shrink-0"
+            />
+            <div className="flex-1 min-w-0 text-[12px] leading-[1.45] text-flame-900 dark:text-flame-200">
+              Click the OttoNote toolbar icon{" "}
+              <span aria-hidden="true">↗</span> above to enable recording on
+              this tab. Chrome requires it once per tab.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Hero record card */}
       <div className="px-5 mt-4">

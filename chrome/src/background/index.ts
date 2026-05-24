@@ -2,6 +2,7 @@ import { getFreshAccessToken } from "../auth/session";
 import { resetState, setState, STATE_KEY, type CaptureState } from "../state";
 
 const OFFSCREEN_URL = "src/offscreen/index.html";
+const NEEDS_TOOLBAR_CLICK_KEY = "ottonote/needs-toolbar-click";
 
 // Open the side panel ourselves from chrome.action.onClicked so the click
 // counts as a user-invocation of the extension. Using setPanelBehavior's
@@ -15,6 +16,10 @@ chrome.action.onClicked.addListener(async (tab) => {
   } catch (e) {
     console.warn("sidePanel.open failed", e);
   }
+  // Clicking the toolbar icon is the gesture that grants activeTab for this
+  // tab, so any pending "click the toolbar icon" hint in the side panel can
+  // now retire.
+  await chrome.storage.local.remove(NEEDS_TOOLBAR_CLICK_KEY);
 });
 
 // Reflect recording state on the toolbar icon so users know capture is
@@ -147,6 +152,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true });
       } catch (e) {
         await setState({ state: "failed", lastEvent: `Error: ${humanError(e)}` });
+        sendResponse({ ok: false, error: String(e) });
+      }
+    })();
+    return true;
+  }
+
+  // Toast click → open the side panel for the sender tab. activeTab cannot be
+  // granted via this path (Chrome only grants it for toolbar/contextMenu/
+  // shortcut invocations of the action), so we also set a flag the side panel
+  // reads to nudge the user to click the toolbar icon.
+  if (msg?.type === "ottonote/open-side-panel-from-toast") {
+    (async () => {
+      try {
+        const tabId = sender.tab?.id;
+        if (!tabId) throw new Error("Missing sender tab");
+        await chrome.sidePanel.open({ tabId });
+        await chrome.storage.local.set({ [NEEDS_TOOLBAR_CLICK_KEY]: true });
+        sendResponse({ ok: true });
+      } catch (e) {
         sendResponse({ ok: false, error: String(e) });
       }
     })();

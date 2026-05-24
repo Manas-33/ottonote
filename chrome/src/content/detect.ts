@@ -82,6 +82,13 @@ function injectToast() {
         font-family: inherit;
         font-size: 11px;
       }
+      .subtitle.hint {
+        color: #ff9d70;
+        text-transform: none;
+        letter-spacing: 0;
+        font-family: inherit;
+        font-size: 11px;
+      }
       button {
         font-family: inherit;
         font-size: 12px;
@@ -120,7 +127,7 @@ function injectToast() {
         <p class="title">OttoNote</p>
         <p class="subtitle">Record this meeting?</p>
       </div>
-      <button class="record">Record</button>
+      <button class="record">Open</button>
       <button class="dismiss" title="Dismiss">×</button>
     </div>
   `;
@@ -128,27 +135,31 @@ function injectToast() {
   const recordBtn = root.querySelector<HTMLButtonElement>(".record")!;
   const dismissBtn = root.querySelector<HTMLButtonElement>(".dismiss")!;
   const subtitle = root.querySelector<HTMLParagraphElement>(".subtitle")!;
-  const defaultSubtitle = subtitle.textContent ?? "Record this meeting?";
 
+  // Chrome only grants activeTab when the user invokes the extension action
+  // directly (toolbar / context menu / shortcut). A click in this toast does
+  // not qualify, so we can't initiate capture from here. Instead, open the
+  // side panel and nudge the user to click the toolbar icon — that grants
+  // activeTab, and the side panel's Start button then works.
   recordBtn.addEventListener("click", async () => {
-    recordBtn.textContent = "Starting…";
+    recordBtn.textContent = "Opening…";
     recordBtn.disabled = true;
-    subtitle.textContent = defaultSubtitle;
-    subtitle.classList.remove("error");
     const res = await chrome.runtime.sendMessage({
-      type: "ottonote/start-from-content",
+      type: "ottonote/open-side-panel-from-toast",
     });
     if (!res?.ok) {
       const err = String(res?.error ?? "Unknown error");
-      console.error("OttoNote start failed:", err);
+      console.error("OttoNote open side panel failed:", err);
       recordBtn.textContent = "Retry";
       recordBtn.disabled = false;
-      // Truncate so the toast doesn't grow unboundedly.
       subtitle.textContent = err.length > 90 ? err.slice(0, 87) + "…" : err;
       subtitle.classList.add("error");
       return;
     }
-    removeToast();
+    // Side panel is open. Tell the user the second step.
+    subtitle.textContent = "Click the OttoNote icon ↗ to enable recording";
+    subtitle.classList.add("hint");
+    recordBtn.style.display = "none";
   });
 
   dismissBtn.addEventListener("click", () => {

@@ -1,7 +1,38 @@
 import { getFreshAccessToken } from "../auth/session";
-import { resetState, setState, type CaptureState } from "../state";
+import { resetState, setState, STATE_KEY, type CaptureState } from "../state";
 
 const OFFSCREEN_URL = "src/offscreen/index.html";
+
+// Open the side panel ourselves from chrome.action.onClicked so the click
+// counts as a user-invocation of the extension. Using setPanelBehavior's
+// openPanelOnActionClick:true would skip the invocation event entirely, which
+// means activeTab is never granted — and tabCapture refuses to capture
+// non-host-permitted URLs (like youtube.com) without it.
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab?.id) return;
+  try {
+    await chrome.sidePanel.open({ tabId: tab.id });
+  } catch (e) {
+    console.warn("sidePanel.open failed", e);
+  }
+});
+
+// Reflect recording state on the toolbar icon so users know capture is
+// active even when the side panel is closed.
+function updateBadge(state: CaptureState | undefined) {
+  const recording = state?.state === "recording";
+  chrome.action.setBadgeText({ text: recording ? "REC" : "" });
+  if (recording) {
+    chrome.action.setBadgeBackgroundColor({ color: "#ff5310" });
+    chrome.action.setBadgeTextColor?.({ color: "#ffffff" });
+  }
+}
+
+chrome.storage.local.get(STATE_KEY).then(({ [STATE_KEY]: s }) => updateBadge(s));
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes[STATE_KEY]) return;
+  updateBadge(changes[STATE_KEY].newValue as CaptureState | undefined);
+});
 
 async function ensureOffscreen() {
   const existing = await chrome.offscreen.hasDocument?.();
@@ -23,14 +54,41 @@ async function sendToOffscreen<T = unknown>(message: object): Promise<T> {
   return chrome.runtime.sendMessage({ ...message, target: "offscreen" });
 }
 
-async function startCapture(tabId: number, title: string | null) {
+const UNCAPTURABLE_PREFIXES = [
+  "chrome://",
+  "chrome-extension://",
+  "chrome-search://",
+  "chrome-untrusted://",
+  "edge://",
+  "about:",
+  "devtools://",
+  "view-source:",
+  "https://chrome.google.com/webstore",
+  "https://chromewebstore.google.com",
+];
+
+async function startCapture(
+  tabId: number,
+  url: string | null | undefined,
+  title: string | null
+) {
+  if (url && UNCAPTURABLE_PREFIXES.some((p) => url.startsWith(p))) {
+    throw new Error(
+      "Chrome doesn't allow capturing this kind of page (chrome://, new-tab, web store, etc.). Open a regular web page and try again."
+    );
+  }
+
   await resetState();
   await setState({ lastEvent: "Spawning offscreen doc…" });
   await ensureOffscreen();
 
   await setState({ lastEvent: "Requesting stream id…" });
   const streamId = await getStreamId(tabId);
-  if (!streamId) throw new Error("Failed to get stream id");
+  if (!streamId) {
+    throw new Error(
+      "Click the OttoNote toolbar icon on the tab you want to record, then hit Start."
+    );
+  }
 
   await setState({ lastEvent: "Starting MediaRecorder…" });
   const res = await sendToOffscreen<{ ok: boolean; error?: string }>({
@@ -70,10 +128,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           currentWindow: true,
         });
         if (!tab?.id) throw new Error("No active tab");
-        await startCapture(tab.id, tab.title ?? null);
+        await startCapture(tab.id, tab.url, tab.title ?? null);
         sendResponse({ ok: true });
       } catch (e) {
-        await setState({ state: "failed", lastEvent: `Error: ${String(e)}` });
+        await setState({ state: "failed", lastEvent: `Error: ${humanError(e)}` });
         sendResponse({ ok: false, error: String(e) });
       }
     })();
@@ -85,10 +143,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         const tabId = sender.tab?.id;
         if (!tabId) throw new Error("Missing sender tab");
-        await startCapture(tabId, sender.tab?.title ?? null);
+        await startCapture(tabId, sender.tab?.url, sender.tab?.title ?? null);
         sendResponse({ ok: true });
       } catch (e) {
-        await setState({ state: "failed", lastEvent: `Error: ${String(e)}` });
+        await setState({ state: "failed", lastEvent: `Error: ${humanError(e)}` });
         sendResponse({ ok: false, error: String(e) });
       }
     })();
@@ -105,7 +163,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!res.ok) throw new Error(res.error ?? "Offscreen stop failed");
         sendResponse({ ok: true });
       } catch (e) {
-        await setState({ state: "failed", lastEvent: `Error: ${String(e)}` });
+        await setState({ state: "failed", lastEvent: `Error: ${humanError(e)}` });
         sendResponse({ ok: false, error: String(e) });
       }
     })();
@@ -114,3 +172,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   return false;
 });
+
+function humanError(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  return String(e);
+}

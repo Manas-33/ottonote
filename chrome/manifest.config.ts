@@ -6,7 +6,6 @@ export default defineManifest({
   version: "0.0.1",
   description: "Capture browser meetings and turn them into structured notes.",
   action: {
-    default_popup: "src/popup/index.html",
     default_title: "OttoNote",
   },
   side_panel: {
@@ -28,11 +27,7 @@ export default defineManifest({
     "downloads",
   ],
   host_permissions: [
-    "http://localhost:8000/*",
-    "https://*.supabase.co/*",
-    "https://meet.google.com/*",
-    "https://*.zoom.us/*",
-    "https://teams.microsoft.com/*",
+    "<all_urls>",
   ],
   content_scripts: [
     {

@@ -10,7 +10,10 @@ import {
   type Meeting,
   type MeetingSummaryRow,
 } from "../api/meetings";
-import { loadSession, type Session } from "../auth/session";
+import { clearSession, loadSession, type Session } from "../auth/session";
+import { signInWithPassword } from "../auth/login";
+import { cancelMeeting } from "../api/meetings";
+import { resetState } from "../state";
 import { downloadMarkdown, openPrintable } from "../lib/exports";
 import { STATE_KEY, type CaptureState } from "../state";
 
@@ -65,9 +68,7 @@ export function SidePanel() {
   if (!session) {
     return (
       <Shell>
-        <p className="empty">
-          Sign in via the OttoNote popup to see meeting results here.
-        </p>
+        <LoginForm onSignedIn={setSession} />
       </Shell>
     );
   }
@@ -79,6 +80,7 @@ export function SidePanel() {
   if (effective === "list") {
     return (
       <Shell>
+        <RecordControls snapshot={snapshot} onSignOut={() => setSession(null)} />
         <MeetingList onSelect={(id) => setUserView(id)} />
       </Shell>
     );
@@ -693,4 +695,154 @@ function speakerColor(speaker: string | null): string {
     hash = (hash * 31 + speaker.charCodeAt(i)) | 0;
   }
   return PALETTE[Math.abs(hash) % PALETTE.length];
+}
+
+// ===========================================================================
+// Stopgap controls (Phase A). Phase B replaces these with the proper screens.
+// ===========================================================================
+
+function LoginForm({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const s = await signInWithPassword(email, password);
+      onSignedIn(s);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="sp-login">
+      <h2>Sign in</h2>
+      <input
+        type="email"
+        placeholder="Email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        required
+        autoFocus
+      />
+      <input
+        type="password"
+        placeholder="Password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        required
+      />
+      <button className="sp-login-submit" type="submit" disabled={busy}>
+        {busy ? "Signing in…" : "Sign in"}
+      </button>
+      {error && <p className="empty error">{error}</p>}
+    </form>
+  );
+}
+
+function RecordControls({
+  snapshot,
+  onSignOut,
+}: {
+  snapshot: CaptureState;
+  onSignOut: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const timer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (snapshot.state === "recording" && snapshot.startedAt) {
+      const tick = () =>
+        setElapsed(Math.floor((Date.now() - snapshot.startedAt!) / 1000));
+      tick();
+      timer.current = window.setInterval(tick, 1000);
+      return () => {
+        if (timer.current) window.clearInterval(timer.current);
+      };
+    }
+    setElapsed(0);
+  }, [snapshot.state, snapshot.startedAt]);
+
+  const start = async () => {
+    setBusy(true);
+    await chrome.runtime.sendMessage({ type: "ottonote/start" });
+    setBusy(false);
+  };
+  const stop = async () => {
+    setBusy(true);
+    await chrome.runtime.sendMessage({ type: "ottonote/stop" });
+    setBusy(false);
+  };
+  const cancel = async () => {
+    setBusy(true);
+    try {
+      if (snapshot.meetingId) {
+        try {
+          await cancelMeeting(snapshot.meetingId);
+        } catch {
+          /* ignore */
+        }
+      }
+      await resetState();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const signOut = async () => {
+    await clearSession();
+    onSignOut();
+  };
+
+  const recording = snapshot.state === "recording";
+  const inFlight =
+    snapshot.state === "uploading" || snapshot.state === "processing";
+
+  return (
+    <div className="sp-controls">
+      {recording ? (
+        <>
+          <span className="sp-controls-timer">{formatElapsed(elapsed)}</span>
+          <button
+            className="sp-controls-stop"
+            onClick={stop}
+            disabled={busy}
+          >
+            Stop
+          </button>
+        </>
+      ) : inFlight ? (
+        <>
+          <span className="sp-controls-status">
+            {snapshot.lastEvent ?? "Working…"}
+          </span>
+          <button className="sp-controls-cancel" onClick={cancel} disabled={busy}>
+            Cancel
+          </button>
+        </>
+      ) : (
+        <button className="sp-controls-start" onClick={start} disabled={busy}>
+          + Start recording
+        </button>
+      )}
+      <button className="sp-controls-signout" onClick={signOut} title="Sign out">
+        ↪
+      </button>
+    </div>
+  );
+}
+
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0");
+  const s = (seconds % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
 }

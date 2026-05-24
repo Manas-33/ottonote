@@ -397,7 +397,7 @@ function DoneBody({
   const doneCount = done_actions.length;
   const pct = total === 0 ? 0 : Math.round((doneCount / total) * 100);
 
-  const tldr = firstSentence(meeting.summary?.summary ?? "");
+  const tldr = meeting.summary?.tldr ?? null;
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -460,7 +460,7 @@ function DoneBody({
                 <span className="flex-1 h-px bg-flame-300/50 dark:bg-flame-700/50" />
               </div>
               <p className="text-[13.5px] leading-[1.5] text-paper-900 dark:text-paper-50 font-medium tracking-[-0.005em]">
-                {tldr}
+                <MarkedText html={tldr} />
               </p>
             </div>
           )}
@@ -1061,12 +1061,44 @@ function deriveSpeakers(
   return seen;
 }
 
-function firstSentence(text: string): string {
-  const trimmed = text.trim();
-  if (!trimmed) return "";
-  const match = trimmed.match(/^[^.!?]+[.!?]/);
-  if (!match) return trimmed;
-  // Avoid returning just an abbreviation like "Mr." — require >= 20 chars.
-  if (match[0].length < 20 && trimmed.length > match[0].length) return trimmed;
-  return match[0];
+// ---------- MarkedText ----------
+// Renders a server-supplied string that may contain literal <mark>...</mark>
+// tags (produced by Claude in summary.tldr). Defense in depth: we don't use
+// dangerouslySetInnerHTML — instead we tokenize on case-insensitive <mark>
+// and </mark> only, and React text-escapes everything else. Any other tag
+// Claude might emit renders as plain text rather than executing.
+function MarkedText({ html }: { html: string | null }) {
+  if (!html) return null;
+  const out: React.ReactNode[] = [];
+  const re = /<\/?mark\s*>/gi;
+  let lastIndex = 0;
+  let inMark = false;
+  let buf = "";
+  let key = 0;
+  const flush = () => {
+    if (!buf) return;
+    if (inMark) {
+      out.push(
+        <mark
+          key={key++}
+          className="bg-flame-200/70 dark:bg-flame-500/25 text-flame-900 dark:text-flame-200 rounded-[2px] px-0.5"
+        >
+          {buf}
+        </mark>
+      );
+    } else {
+      out.push(<span key={key++}>{buf}</span>);
+    }
+    buf = "";
+  };
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    buf += html.slice(lastIndex, m.index);
+    flush();
+    inMark = m[0].toLowerCase().startsWith("</") ? false : true;
+    lastIndex = re.lastIndex;
+  }
+  buf += html.slice(lastIndex);
+  flush();
+  return <>{out}</>;
 }

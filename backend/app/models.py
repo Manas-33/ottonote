@@ -88,6 +88,9 @@ class Summary(Base):
         ForeignKey("meetings.id", ondelete="CASCADE"),
         primary_key=True,
     )
+    # One-sentence headline with inline <mark>...</mark> tags. Nullable so
+    # pre-tldr meetings keep working — the frontend just hides the pull-quote.
+    tldr: Mapped[str | None] = mapped_column(Text)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     decisions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     keywords: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

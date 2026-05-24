@@ -16,6 +16,9 @@ export type Segment = {
 };
 
 export type Summary = {
+  // One-sentence headline with inline <mark>...</mark> tags. Null on
+  // pre-tldr meetings; the frontend hides the pull-quote in that case.
+  tldr: string | null;
   summary: string;
   decisions: string[];
   keywords: Record<string, string[]>;

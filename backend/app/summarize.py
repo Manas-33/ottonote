@@ -42,6 +42,13 @@ class CalendarEvent(BaseModel):
 
 
 class MeetingNotes(BaseModel):
+    tldr: str = Field(
+        description=(
+            "Single-sentence headline of the meeting. Wrap the most important "
+            "phrases (people, decisions, deliverables, dates, metrics) in "
+            "<mark>...</mark> tags. No other HTML."
+        )
+    )
     summary: str = Field(description="2-4 sentences covering the main discussion")
     decisions: list[str] = Field(default_factory=list)
     action_items: list[ActionItem] = Field(default_factory=list)
@@ -59,6 +66,16 @@ _RECORD_NOTES_TOOL = {
     "input_schema": {
         "type": "object",
         "properties": {
+            "tldr": {
+                "type": "string",
+                "description": (
+                    "One-sentence headline of the meeting. Wrap the most "
+                    "important phrases — people, decisions, deliverables, "
+                    "dates, metrics — in <mark>...</mark> tags. Use only "
+                    "<mark> and </mark>; no other HTML or attributes. "
+                    "Mark 2-5 phrases total; do not mark every word."
+                ),
+            },
             "summary": {
                 "type": "string",
                 "description": "2-4 sentence overview of the meeting.",
@@ -109,6 +126,7 @@ _RECORD_NOTES_TOOL = {
             },
         },
         "required": [
+            "tldr",
             "summary",
             "decisions",
             "action_items",

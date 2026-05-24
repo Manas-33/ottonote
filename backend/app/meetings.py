@@ -35,6 +35,7 @@ class SegmentOut(BaseModel):
 
 
 class SummaryOut(BaseModel):
+    tldr: str | None
     summary: str
     decisions: list[str]
     keywords: dict[str, list[str]]
@@ -107,6 +108,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
         ],
         summary=(
             SummaryOut(
+                tldr=m.summary.tldr,
                 summary=m.summary.summary,
                 decisions=list(m.summary.decisions or []),
                 keywords=dict(m.summary.keywords or {}),

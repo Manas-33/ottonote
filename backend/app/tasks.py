@@ -128,6 +128,7 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
             db.add(
                 Summary(
                     meeting_id=meeting.id,
+                    tldr=notes.tldr,
                     summary=notes.summary,
                     decisions=notes.decisions,
                     keywords=notes.keywords_by_category,

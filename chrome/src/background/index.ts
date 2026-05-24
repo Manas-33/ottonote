@@ -75,7 +75,8 @@ const UNCAPTURABLE_PREFIXES = [
 async function startCapture(
   tabId: number,
   url: string | null | undefined,
-  title: string | null
+  title: string | null,
+  workspaceId: string | null
 ) {
   if (url && UNCAPTURABLE_PREFIXES.some((p) => url.startsWith(p))) {
     throw new Error(
@@ -100,6 +101,7 @@ async function startCapture(
     type: "offscreen/start",
     streamId,
     title,
+    workspaceId,
   });
   if (!res.ok) throw new Error(res.error ?? "Offscreen start failed");
 
@@ -133,7 +135,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           currentWindow: true,
         });
         if (!tab?.id) throw new Error("No active tab");
-        await startCapture(tab.id, tab.url, tab.title ?? null);
+        await startCapture(
+          tab.id,
+          tab.url,
+          tab.title ?? null,
+          msg.workspaceId ?? null
+        );
         sendResponse({ ok: true });
       } catch (e) {
         await setState({ state: "failed", lastEvent: `Error: ${humanError(e)}` });
@@ -148,7 +155,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         const tabId = sender.tab?.id;
         if (!tabId) throw new Error("Missing sender tab");
-        await startCapture(tabId, sender.tab?.url, sender.tab?.title ?? null);
+        // Content-script path can't know the user's selected workspace —
+        // backend falls back to the user's default workspace when null.
+        await startCapture(tabId, sender.tab?.url, sender.tab?.title ?? null, null);
         sendResponse({ ok: true });
       } catch (e) {
         await setState({ state: "failed", lastEvent: `Error: ${humanError(e)}` });

@@ -59,6 +59,7 @@ export type Meeting = {
   duration_sec: number | null;
   language: string | null;
   num_speakers: number | null;
+  workspace_id: string | null;
   created_at: string;
   segments: Segment[];
   summary: Summary | null;
@@ -82,19 +83,31 @@ export type MeetingSummaryRow = {
   duration_sec: number | null;
   language: string | null;
   num_speakers: number | null;
+  workspace_id: string | null;
   created_at: string;
 };
 
-export async function listMeetings(): Promise<MeetingSummaryRow[]> {
-  const res = await apiFetch("/meetings");
+export async function listMeetings(
+  workspaceId?: string | null
+): Promise<MeetingSummaryRow[]> {
+  const path = workspaceId
+    ? `/meetings?workspace_id=${encodeURIComponent(workspaceId)}`
+    : "/meetings";
+  const res = await apiFetch(path);
   return jsonOrThrow<MeetingSummaryRow[]>(res, "List meetings");
 }
 
-export async function createMeeting(title?: string | null): Promise<Meeting> {
+export async function createMeeting(
+  title?: string | null,
+  workspaceId?: string | null
+): Promise<Meeting> {
   const res = await apiFetch("/meetings", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title: title ?? null }),
+    body: JSON.stringify({
+      title: title ?? null,
+      workspace_id: workspaceId ?? null,
+    }),
   });
   return jsonOrThrow<Meeting>(res, "Create meeting");
 }
@@ -120,7 +133,7 @@ export async function getMeeting(meetingId: string): Promise<Meeting> {
 
 export async function updateMeeting(
   meetingId: string,
-  patch: { title?: string | null }
+  patch: { title?: string | null; workspace_id?: string | null }
 ): Promise<Meeting> {
   const res = await apiFetch(`/meetings/${meetingId}`, {
     method: "PATCH",

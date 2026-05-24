@@ -5,6 +5,7 @@ import {
   type MeetingSummaryRow,
 } from "../../api/meetings";
 import type { Session } from "../../auth/session";
+import { WorkspaceSwitcher } from "../components/WorkspaceSwitcher";
 import {
   dateLabel,
   firstNameFromEmail,
@@ -15,6 +16,7 @@ import {
   progressInfo,
 } from "../format";
 import { Icon, PanelMast, StatusChip } from "../ui";
+import { useWorkspaces, WORKSPACE_COLOR_CLASSES } from "../workspace";
 
 const NEEDS_TOOLBAR_CLICK_KEY = "ottonote/needs-toolbar-click";
 
@@ -38,10 +40,21 @@ export function Idle({
   // click the toolbar icon. Cleared by the background on action.onClicked.
   const [needsToolbarClick, setNeedsToolbarClick] = useState(false);
 
+  const {
+    workspaces,
+    selectedId: selectedWorkspaceId,
+    setSelected: setSelectedWorkspace,
+    refresh: refreshWorkspaces,
+  } = useWorkspaces();
+  const workspaceById = useMemo(
+    () => new Map((workspaces ?? []).map((w) => [w.id, w] as const)),
+    [workspaces]
+  );
+
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      listMeetings()
+      listMeetings(selectedWorkspaceId ?? undefined)
         .then((rs) => {
           if (!cancelled) {
             setRows(rs);
@@ -59,7 +72,7 @@ export function Idle({
       cancelled = true;
       window.clearInterval(handle);
     };
-  }, []);
+  }, [selectedWorkspaceId]);
 
   useEffect(() => {
     chrome.storage.local.get(NEEDS_TOOLBAR_CLICK_KEY).then((r) => {
@@ -147,7 +160,7 @@ export function Idle({
       </div>
 
       {/* Library header */}
-      <div className="mt-7 px-5 flex items-baseline gap-3">
+      <div className="mt-7 px-5 flex items-center gap-3">
         <h2 className="font-mono text-[10px] uppercase tracking-[0.16em] text-paper-700 dark:text-paper-200 font-medium">
           Library
         </h2>
@@ -157,6 +170,14 @@ export function Idle({
           </span>
         )}
         <span className="flex-1 h-px bg-paper-200 dark:bg-paper-800" />
+        {workspaces && (
+          <WorkspaceSwitcher
+            workspaces={workspaces}
+            selectedId={selectedWorkspaceId}
+            onSelect={setSelectedWorkspace}
+            onMutated={refreshWorkspaces}
+          />
+        )}
       </div>
 
       {/* Library body */}
@@ -188,11 +209,26 @@ export function Idle({
                     <span className="flex-1 h-px bg-paper-200/70 dark:bg-paper-800/70" />
                   </div>
                   <ul>
-                    {g.rows.map((m) => (
-                      <li key={m.id}>
-                        <MeetingRow m={m} onOpen={() => onOpenMeeting(m.id)} />
-                      </li>
-                    ))}
+                    {g.rows.map((m) => {
+                      const ws = m.workspace_id
+                        ? workspaceById.get(m.workspace_id)
+                        : undefined;
+                      // Only show the dot in the "All workspaces" view —
+                      // when filtered, every row shares the same color.
+                      const dotColor =
+                        selectedWorkspaceId === null && ws
+                          ? WORKSPACE_COLOR_CLASSES[ws.color].dot
+                          : null;
+                      return (
+                        <li key={m.id}>
+                          <MeetingRow
+                            m={m}
+                            dotColor={dotColor}
+                            onOpen={() => onOpenMeeting(m.id)}
+                          />
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )
@@ -205,9 +241,11 @@ export function Idle({
 
 function MeetingRow({
   m,
+  dotColor,
   onOpen,
 }: {
   m: MeetingSummaryRow;
+  dotColor: string | null;
   onOpen: () => void;
 }) {
   const chipStatus = toChipStatus(m.status);
@@ -219,6 +257,12 @@ function MeetingRow({
       onClick={onOpen}
       className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-paper-100 dark:hover:bg-paper-900 transition-colors flex items-center gap-3"
     >
+      {dotColor && (
+        <span
+          className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`}
+          aria-hidden="true"
+        />
+      )}
       <div className="flex-1 min-w-0">
         <div className="text-[13.5px] font-medium truncate tracking-[-0.01em]">
           {m.title ?? "Untitled meeting"}

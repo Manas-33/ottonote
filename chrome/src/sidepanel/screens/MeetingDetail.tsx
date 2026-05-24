@@ -17,6 +17,7 @@ import {
   formatShortDuration,
 } from "../format";
 import { Button, Icon, IconBtn, type IconName } from "../ui";
+import { useWorkspaces, WORKSPACE_COLOR_CLASSES } from "../workspace";
 
 // Tailwind needs these class strings to appear literally in source so it can
 // pick them up; keep this array spelled-out rather than generated.
@@ -152,6 +153,22 @@ export function MeetingDetail({
     }
   };
 
+  const handleWorkspaceChange = async (workspaceId: string) => {
+    const previous = meeting.workspace_id;
+    updateLocal({ workspace_id: workspaceId });
+    try {
+      const updated = await updateMeeting(meeting.id, {
+        workspace_id: workspaceId,
+      });
+      setMeeting(updated);
+    } catch (err) {
+      updateLocal({ workspace_id: previous });
+      window.alert(
+        `Couldn't move meeting: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  };
+
   const handleActionToggle = (item: ActionItem, status: "open" | "done") => {
     setMeeting((prev) =>
       prev
@@ -186,6 +203,7 @@ export function MeetingDetail({
       onDelete={handleDelete}
       onActionToggle={handleActionToggle}
       onRetry={handleRetry}
+      onWorkspaceChange={handleWorkspaceChange}
     />
   );
 }
@@ -223,6 +241,7 @@ function DetailLayout({
   onDelete,
   onActionToggle,
   onRetry,
+  onWorkspaceChange,
 }: {
   meeting: Meeting;
   onBack: () => void;
@@ -230,6 +249,7 @@ function DetailLayout({
   onDelete: () => void;
   onActionToggle: (item: ActionItem, status: "open" | "done") => void;
   onRetry?: () => void;
+  onWorkspaceChange: (workspaceId: string) => void;
 }) {
   const speakers = useMemo(
     () => deriveSpeakers(meeting.segments),
@@ -246,6 +266,7 @@ function DetailLayout({
         onBack={onBack}
         onTitleSave={onTitleSave}
         onDelete={onDelete}
+        onWorkspaceChange={onWorkspaceChange}
       />
       <div className="flex-1 overflow-y-auto otto-scroll">
         {failed ? (
@@ -269,12 +290,14 @@ function StickyHeader({
   onBack,
   onTitleSave,
   onDelete,
+  onWorkspaceChange,
 }: {
   meeting: Meeting;
   speakers: Map<string | null, SpeakerStyle>;
   onBack: () => void;
   onTitleSave: (s: string) => void;
   onDelete: () => void;
+  onWorkspaceChange: (workspaceId: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(meeting.title ?? "");
@@ -367,6 +390,12 @@ function StickyHeader({
             {meeting.duration_sec != null &&
               `${formatShortDuration(meeting.duration_sec)} · `}
             {formatRelative(meeting.created_at)}
+          </div>
+          <div className="ml-auto">
+            <WorkspaceChip
+              meetingWorkspaceId={meeting.workspace_id}
+              onChange={onWorkspaceChange}
+            />
           </div>
         </div>
       </div>
@@ -1110,4 +1139,79 @@ function MarkedText({ html }: { html: string | null }) {
   buf += html.slice(lastIndex);
   flush();
   return <>{out}</>;
+}
+
+// ---------- Workspace chip ----------
+// Sticky-header affordance for moving a meeting between workspaces.
+function WorkspaceChip({
+  meetingWorkspaceId,
+  onChange,
+}: {
+  meetingWorkspaceId: string | null;
+  onChange: (workspaceId: string) => void;
+}) {
+  const { workspaces } = useWorkspaces();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  if (!workspaces) return null;
+  const current = workspaces.find((w) => w.id === meetingWorkspaceId) ?? null;
+  const colorCls = current
+    ? WORKSPACE_COLOR_CLASSES[current.color]
+    : WORKSPACE_COLOR_CLASSES.slate;
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="Move to workspace"
+        className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] font-medium ${colorCls.chip} ${colorCls.chipText} hover:opacity-80`}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full ${colorCls.dot}`} />
+        <span className="truncate max-w-[90px]">
+          {current?.name ?? "No workspace"}
+        </span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 w-56 rounded-lg border border-paper-200 dark:border-paper-800 bg-paper-50 dark:bg-paper-900 shadow-lg z-20 py-1 max-h-72 overflow-y-auto otto-scroll">
+          {workspaces.map((w) => {
+            const cls = WORKSPACE_COLOR_CLASSES[w.color];
+            const active = w.id === meetingWorkspaceId;
+            return (
+              <button
+                key={w.id}
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  if (!active) onChange(w.id);
+                }}
+                className={`w-full text-left px-3 py-1.5 text-[12px] flex items-center gap-2 hover:bg-paper-100 dark:hover:bg-paper-800 ${
+                  active
+                    ? "text-paper-900 dark:text-paper-50 font-medium"
+                    : "text-paper-700 dark:text-paper-300"
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full shrink-0 ${cls.dot}`} />
+                <span className="truncate">{w.name}</span>
+                {active && (
+                  <Icon name="check" size={12} className="ml-auto opacity-60" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }

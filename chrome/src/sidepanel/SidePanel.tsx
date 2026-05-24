@@ -9,6 +9,7 @@ import { Processing } from "./screens/Processing";
 import { Recording } from "./screens/Recording";
 import { SignedOut } from "./screens/SignedOut";
 import { Uploading } from "./screens/Uploading";
+import { getSelectedWorkspaceId } from "./workspace";
 
 export function SidePanel() {
   const [session, setSession] = useState<Session | null>(null);
@@ -106,7 +107,10 @@ export function SidePanel() {
   };
 
   const startRecording = () => {
-    chrome.runtime.sendMessage({ type: "ottonote/start" });
+    chrome.runtime.sendMessage({
+      type: "ottonote/start",
+      workspaceId: getSelectedWorkspaceId(),
+    });
   };
 
   const exitDetail = async () => {

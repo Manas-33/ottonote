@@ -31,11 +31,14 @@ async function jsonOrThrow<T>(res: Response, what: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-async function createMeeting(title: string): Promise<Meeting> {
+async function createMeeting(
+  title: string,
+  workspaceId: string | null
+): Promise<Meeting> {
   const res = await apiFetch("/meetings", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, workspace_id: workspaceId }),
   });
   return jsonOrThrow<Meeting>(res, "Create meeting");
 }
@@ -59,6 +62,7 @@ let levelsChannel: BroadcastChannel | null = null;
 let levelsInterval: number | null = null;
 let chunks: Blob[] = [];
 let meetingTitle: string | null = null;
+let meetingWorkspaceId: string | null = null;
 
 // Number of bars the side panel renders. Keep in sync with LiveWaveform.
 const WAVE_BARS = 32;
@@ -122,8 +126,13 @@ function stopLevels() {
   analyserNode = null;
 }
 
-async function start(streamId: string, title: string | null) {
+async function start(
+  streamId: string,
+  title: string | null,
+  workspaceId: string | null
+) {
   meetingTitle = title;
+  meetingWorkspaceId = workspaceId;
   stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       // @ts-expect-error chrome-specific constraints
@@ -179,7 +188,8 @@ async function stopAndUpload() {
 
   const meeting = await createMeeting(
     meetingTitle?.trim() ||
-      `Browser meeting ${new Date().toLocaleString()}`
+      `Browser meeting ${new Date().toLocaleString()}`,
+    meetingWorkspaceId
   );
   await setState({
     meetingId: meeting.id,
@@ -197,7 +207,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.target !== "offscreen") return false;
 
   if (msg.type === "offscreen/start") {
-    start(msg.streamId, msg.title ?? null)
+    start(msg.streamId, msg.title ?? null, msg.workspaceId ?? null)
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;

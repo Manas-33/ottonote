@@ -1,0 +1,162 @@
+import { useEffect, useMemo, useState } from "react";
+import type { CaptureState } from "../../state";
+import { Button, Icon, PanelMast } from "../ui";
+
+// Title input is local-only for now — backend creates the meeting with the
+// tab title at start; the user can rename in MeetingDetail after processing.
+// Wiring it through to update_meeting is Phase G.
+
+export function Recording({
+  snapshot,
+  initials,
+  onSettings,
+}: {
+  snapshot: CaptureState;
+  initials?: string;
+  onSettings?: () => void;
+}) {
+  const [seconds, setSeconds] = useState(() =>
+    snapshot.startedAt
+      ? Math.floor((Date.now() - snapshot.startedAt) / 1000)
+      : 0
+  );
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!snapshot.startedAt) return;
+    const tick = () =>
+      setSeconds(Math.floor((Date.now() - snapshot.startedAt!) / 1000));
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [snapshot.startedAt]);
+
+  const stop = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await chrome.runtime.sendMessage({ type: "ottonote/stop" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
+
+  return (
+    <div className="h-full flex flex-col bg-paper-50 dark:bg-paper-950">
+      <PanelMast
+        initials={initials}
+        onSettings={onSettings}
+        left={
+          <span className="ml-1 chip-sq text-red-800 bg-red-100 dark:text-red-300 dark:bg-red-900/40">
+            <span className="relative w-1.5 h-1.5 rounded-sm bg-red-500">
+              <span className="absolute inset-0 rounded-sm bg-red-500 animate-rec-pulse" />
+            </span>
+            REC
+          </span>
+        }
+      />
+
+      {/* Timer */}
+      <div className="px-5 pt-7">
+        <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-paper-500 dark:text-paper-400 mb-3 flex items-center justify-between">
+          <span>● Live · capturing tab audio</span>
+          <span>48 kHz · mono</span>
+        </div>
+        <div className="font-mono tabular-nums text-[68px] leading-[0.9] font-medium tracking-[-0.02em] text-paper-900 dark:text-paper-50">
+          {mm}
+          <span className="text-paper-300 dark:text-paper-700">:</span>
+          {ss}
+        </div>
+        <div className="mt-2 font-mono text-[10.5px] text-paper-500 dark:text-paper-400 tabular-nums uppercase tracking-[0.12em]">
+          {snapshot.startedAt
+            ? `Started ${formatClock(snapshot.startedAt)} · auto-saving locally`
+            : "Auto-saving locally"}
+        </div>
+      </div>
+
+      {/* Live (fake) waveform */}
+      <div className="mt-7 px-5">
+        <div className="sec-rule text-paper-500 dark:text-paper-400 mb-2.5">
+          <span className="text-paper-400 dark:text-paper-500">003</span>
+          <span className="text-paper-700 dark:text-paper-200">Input</span>
+          <span className="line" />
+        </div>
+        <FakeWaveform />
+      </div>
+
+      {/* Title */}
+      <div className="px-5 mt-6">
+        <div className="sec-rule text-paper-500 dark:text-paper-400 mb-2.5">
+          <span className="text-paper-400 dark:text-paper-500">004</span>
+          <span className="text-paper-700 dark:text-paper-200">Title</span>
+          <span className="line" />
+        </div>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Untitled meeting"
+          className="w-full h-10 px-3 rounded-lg bg-transparent border border-paper-200 dark:border-paper-800 text-[14px] focus:border-flame-500 focus:ring-2 focus:ring-flame-500/15 outline-none transition placeholder:text-paper-400 dark:placeholder:text-paper-600"
+        />
+        <div className="mt-2 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-paper-500 dark:text-paper-400">
+          <Icon name="info" size={10} />
+          You can rename after the meeting finishes processing.
+        </div>
+      </div>
+
+      {/* Stop */}
+      <div className="mt-auto px-4 pb-4 pt-3 border-t border-paper-200 dark:border-paper-800 bg-paper-100/60 dark:bg-paper-900/40">
+        <Button
+          variant="danger"
+          size="lg"
+          className="w-full"
+          onClick={stop}
+          disabled={busy}
+        >
+          <Icon name="square" size={13} strokeWidth={2.5} />
+          {busy ? "Stopping…" : "Stop recording"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function FakeWaveform() {
+  const bars = useMemo(() => Array.from({ length: 56 }, (_, i) => i), []);
+  const [seed, setSeed] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setSeed((s) => s + 1), 95);
+    return () => window.clearInterval(id);
+  }, []);
+  return (
+    <div className="h-16 flex items-center gap-[3px]">
+      {bars.map((i) => {
+        const phase = (i + seed * 0.9) * 0.55;
+        const h =
+          3 +
+          Math.abs(Math.sin(phase)) * 38 +
+          Math.abs(Math.sin(phase * 0.3 + i)) * 8;
+        const recent = i > bars.length - 7;
+        return (
+          <span
+            key={i}
+            className={`w-[3px] rounded-[1px] transition-all duration-100 ${
+              recent ? "bg-flame-500" : "bg-paper-300 dark:bg-paper-700"
+            }`}
+            style={{ height: `${h}px` }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function formatClock(ts: number): string {
+  const d = new Date(ts);
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
+}

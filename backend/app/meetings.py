@@ -15,15 +15,17 @@ from sqlalchemy.orm import selectinload
 from app.auth import CurrentUser, get_current_user
 from app.celery_app import celery_app
 from app.db import get_db
-from app.models import ActionItem, Meeting
+from app.models import ActionItem, Meeting, Workspace
 from app.storage import delete_audio, signed_url, storage_path_for, upload_audio
 from app.tasks import process_meeting_task
+from app.workspaces import ensure_default_workspace
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
 
 class MeetingCreate(BaseModel):
     title: str | None = None
+    workspace_id: uuid.UUID | None = None
 
 
 class SegmentOut(BaseModel):
@@ -67,6 +69,7 @@ class MeetingSummaryRow(BaseModel):
     duration_sec: float | None
     language: str | None
     num_speakers: int | None
+    workspace_id: uuid.UUID | None
     created_at: str
 
 
@@ -78,6 +81,7 @@ class MeetingDetail(BaseModel):
     duration_sec: float | None
     language: str | None
     num_speakers: int | None
+    workspace_id: uuid.UUID | None
     error_message: str | None
     task_id: str | None
     created_at: str
@@ -96,6 +100,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
         duration_sec=m.duration_sec,
         language=m.language,
         num_speakers=m.num_speakers,
+        workspace_id=m.workspace_id,
         error_message=m.error_message,
         task_id=m.task_id,
         created_at=m.created_at.isoformat(),
@@ -162,13 +167,35 @@ async def _fetch_meeting(
     return meeting
 
 
+async def _resolve_workspace_id(
+    requested: uuid.UUID | None, user: CurrentUser, db: AsyncSession
+) -> uuid.UUID:
+    """Validate the requested workspace belongs to the user; fall back to default."""
+    if requested is None:
+        ws = await ensure_default_workspace(user.id, db)
+        return ws.id
+    stmt = select(Workspace).where(
+        Workspace.id == requested, Workspace.user_id == user.id
+    )
+    ws = (await db.execute(stmt)).scalar_one_or_none()
+    if not ws:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return ws.id
+
+
 @router.post("", response_model=MeetingDetail, status_code=status.HTTP_201_CREATED)
 async def create_meeting(
     body: MeetingCreate,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> MeetingDetail:
-    meeting = Meeting(user_id=user.id, title=body.title, status="pending")
+    workspace_id = await _resolve_workspace_id(body.workspace_id, user, db)
+    meeting = Meeting(
+        user_id=user.id,
+        title=body.title,
+        status="pending",
+        workspace_id=workspace_id,
+    )
     db.add(meeting)
     await db.commit()
     await db.refresh(meeting)
@@ -178,6 +205,7 @@ async def create_meeting(
 
 @router.get("", response_model=list[MeetingSummaryRow])
 async def list_meetings(
+    workspace_id: uuid.UUID | None = None,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[MeetingSummaryRow]:
@@ -186,6 +214,8 @@ async def list_meetings(
         .where(Meeting.user_id == user.id)
         .order_by(Meeting.created_at.desc())
     )
+    if workspace_id is not None:
+        stmt = stmt.where(Meeting.workspace_id == workspace_id)
     result = await db.execute(stmt)
     rows = result.scalars().all()
     return [
@@ -197,6 +227,7 @@ async def list_meetings(
             duration_sec=m.duration_sec,
             language=m.language,
             num_speakers=m.num_speakers,
+            workspace_id=m.workspace_id,
             created_at=m.created_at.isoformat(),
         )
         for m in rows
@@ -349,6 +380,7 @@ async def cancel_meeting_processing(
 
 class MeetingPatch(BaseModel):
     title: str | None = None
+    workspace_id: uuid.UUID | None = None
 
 
 @router.patch("/{meeting_id}", response_model=MeetingDetail)
@@ -358,10 +390,19 @@ async def update_meeting(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> MeetingDetail:
-    """Update editable fields on a meeting. Currently just `title`."""
+    """Update editable fields on a meeting (title, workspace)."""
     meeting = await _fetch_meeting(meeting_id, user, db)
     if body.title is not None:
         meeting.title = body.title.strip() or None
+    if body.workspace_id is not None:
+        # Validate ownership of the target workspace before reassigning.
+        stmt = select(Workspace).where(
+            Workspace.id == body.workspace_id, Workspace.user_id == user.id
+        )
+        ws = (await db.execute(stmt)).scalar_one_or_none()
+        if not ws:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+        meeting.workspace_id = ws.id
     await db.commit()
     fresh = await _fetch_meeting(meeting.id, user, db)
     return _to_detail(fresh)

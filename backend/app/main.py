@@ -11,6 +11,7 @@ from app.meetings import router as meetings_router
 from app.merge import assign_speakers
 from app.summarize import MeetingNotes, TranscriptSegment, summarize_segments
 from app.transcription import transcribe_file
+from app.workspaces import router as workspaces_router
 
 app = FastAPI(title="OttoNote Backend", version="0.2.0")
 
@@ -24,6 +25,7 @@ app.add_middleware(
 )
 
 app.include_router(meetings_router)
+app.include_router(workspaces_router)
 
 
 @app.get("/health")

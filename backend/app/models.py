@@ -11,6 +11,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -27,6 +28,33 @@ class Base(DeclarativeBase):
     pass
 
 
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), index=True, nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    # One of the preset palette keys defined by the client (slate, blue,
+    # emerald, amber, rose, violet). Stored as a free-form string so the
+    # palette can grow without a migration.
+    color: Mapped[str] = mapped_column(String(20), default="slate", nullable=False)
+    # The user's auto-created "Default" workspace. Exactly one per user.
+    # Cannot be deleted; receives orphaned meetings when other workspaces
+    # are deleted.
+    is_default: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    meetings: Mapped[list["Meeting"]] = relationship(back_populates="workspace")
+
+
 class Meeting(Base):
     __tablename__ = "meetings"
 
@@ -34,6 +62,12 @@ class Meeting(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, nullable=False)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
     title: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     # pending | processing | done | failed | cancelled
@@ -49,6 +83,8 @@ class Meeting(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    workspace: Mapped["Workspace | None"] = relationship(back_populates="meetings")
 
     segments: Mapped[list["Segment"]] = relationship(
         back_populates="meeting", cascade="all, delete-orphan", order_by="Segment.idx"

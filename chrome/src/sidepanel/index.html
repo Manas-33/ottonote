@@ -3,6 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <title>OttoNote</title>
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("ottonote/theme");
+          var prefersDark =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var isDark = stored ? stored === "dark" : prefersDark;
+          if (isDark) document.documentElement.classList.add("dark");
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

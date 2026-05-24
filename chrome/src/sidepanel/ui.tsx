@@ -1,6 +1,8 @@
 // Design-system primitives shared by every side-panel screen.
 // Ported from chrome/OttoNote Side Panel.html — see Phase B in the roadmap.
 
+import { useState } from "react";
+import { getTheme, toggleTheme } from "./theme";
 import {
   AlignLeft,
   ArrowRight,
@@ -14,6 +16,7 @@ import {
   Lock,
   Mail,
   Minus,
+  Moon,
   MoreHorizontal,
   Pause,
   Plus,
@@ -22,6 +25,7 @@ import {
   Share2,
   Sparkles,
   Square,
+  Sun,
   Trash2,
   Upload,
   type LucideIcon,
@@ -42,6 +46,7 @@ const ICONS: Record<string, LucideIcon> = {
   lock: Lock,
   mail: Mail,
   minus: Minus,
+  moon: Moon,
   "more-horizontal": MoreHorizontal,
   pause: Pause,
   plus: Plus,
@@ -50,6 +55,7 @@ const ICONS: Record<string, LucideIcon> = {
   "share-2": Share2,
   sparkles: Sparkles,
   square: Square,
+  sun: Sun,
   "trash-2": Trash2,
   upload: Upload,
 };
@@ -282,6 +288,7 @@ export function PanelMast({
         {left}
       </div>
       {right}
+      <ThemeToggle />
       <button
         type="button"
         onClick={onSettings}
@@ -294,5 +301,21 @@ export function PanelMast({
         {initials}
       </div>
     </div>
+  );
+}
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState(() => getTheme());
+  const isDark = theme === "dark";
+  return (
+    <button
+      type="button"
+      onClick={() => setTheme(toggleTheme())}
+      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      className="w-7 h-7 rounded-md hover:bg-paper-100 dark:hover:bg-paper-900 flex items-center justify-center text-paper-500"
+    >
+      <Icon name={isDark ? "sun" : "moon"} size={13} />
+    </button>
   );
 }

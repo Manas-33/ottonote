@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CaptureState } from "../../state";
 import { Button, Icon, PanelMast } from "../ui";
+
+// Must match offscreen.ts WAVE_BARS.
+const WAVE_BARS = 32;
 
 // Title input is local-only for now — backend creates the meeting with the
 // tab title at start; the user can rename in MeetingDetail after processing.
@@ -78,14 +81,14 @@ export function Recording({
         </div>
       </div>
 
-      {/* Live (fake) waveform */}
+      {/* Live waveform */}
       <div className="mt-7 px-5">
         <div className="sec-rule text-paper-500 dark:text-paper-400 mb-2.5">
           <span className="text-paper-400 dark:text-paper-500">003</span>
           <span className="text-paper-700 dark:text-paper-200">Input</span>
           <span className="line" />
         </div>
-        <FakeWaveform />
+        <LiveWaveform />
       </div>
 
       {/* Title */}
@@ -124,29 +127,65 @@ export function Recording({
   );
 }
 
-function FakeWaveform() {
-  const bars = useMemo(() => Array.from({ length: 56 }, (_, i) => i), []);
-  const [seed, setSeed] = useState(0);
+// Renders live audio levels broadcast by offscreen.ts. Each frame is a
+// Uint8Array(1) carrying the instantaneous peak amplitude (0-255). We keep
+// a rolling buffer of the last WAVE_BARS samples — oldest on the left,
+// newest on the right — so the visual reads like a scope scrolling left.
+// React state is bypassed: bar heights are written directly into refs to
+// avoid re-rendering 30 times a second.
+function LiveWaveform() {
+  const barRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const buffer = useRef<Uint8Array>(new Uint8Array(WAVE_BARS));
+
   useEffect(() => {
-    const id = window.setInterval(() => setSeed((s) => s + 1), 95);
-    return () => window.clearInterval(id);
+    const channel = new BroadcastChannel("ottonote-levels");
+    let raf = 0;
+    const paint = () => {
+      const buf = buffer.current;
+      for (let i = 0; i < WAVE_BARS; i++) {
+        const el = barRefs.current[i];
+        if (!el) continue;
+        // Power curve (sqrt) boosts quiet speech into a visible range, plus
+        // a small floor so silence stays a baseline line of dots.
+        const norm = buf[i] / 255;
+        const shaped = Math.sqrt(norm);
+        const h = 3 + shaped * 53;
+        el.style.height = `${h}px`;
+      }
+    };
+    const handler = (ev: MessageEvent) => {
+      if (!(ev.data instanceof Uint8Array) || ev.data.length !== 1) return;
+      const buf = buffer.current;
+      // Shift left (drop oldest), push newest on the right.
+      buf.copyWithin(0, 1);
+      buf[WAVE_BARS - 1] = ev.data[0];
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(paint);
+    };
+    channel.addEventListener("message", handler);
+    return () => {
+      cancelAnimationFrame(raf);
+      channel.removeEventListener("message", handler);
+      channel.close();
+    };
   }, []);
+
   return (
-    <div className="h-16 flex items-center gap-[3px]">
-      {bars.map((i) => {
-        const phase = (i + seed * 0.9) * 0.55;
-        const h =
-          3 +
-          Math.abs(Math.sin(phase)) * 38 +
-          Math.abs(Math.sin(phase * 0.3 + i)) * 8;
-        const recent = i > bars.length - 7;
+    <div className="h-16 flex items-end gap-[3px]">
+      {Array.from({ length: WAVE_BARS }, (_, i) => {
+        // The rightmost ~5 bars are "now" — flame-tinted so the leading edge
+        // of the scrolling buffer reads as the current moment.
+        const recent = i > WAVE_BARS - 5;
         return (
           <span
             key={i}
-            className={`w-[3px] rounded-[1px] transition-all duration-100 ${
+            ref={(el) => {
+              barRefs.current[i] = el;
+            }}
+            className={`flex-1 min-w-[3px] rounded-[1px] transition-[height] duration-75 ease-out ${
               recent ? "bg-flame-500" : "bg-paper-300 dark:bg-paper-700"
             }`}
-            style={{ height: `${h}px` }}
+            style={{ height: "3px" }}
           />
         );
       })}

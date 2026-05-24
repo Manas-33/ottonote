@@ -53,8 +53,74 @@ async function processMeeting(meetingId: string, blob: Blob): Promise<Meeting> {
 let recorder: MediaRecorder | null = null;
 let stream: MediaStream | null = null;
 let audioCtx: AudioContext | null = null;
+let sourceNode: MediaStreamAudioSourceNode | null = null;
+let analyserNode: AnalyserNode | null = null;
+let levelsChannel: BroadcastChannel | null = null;
+let levelsInterval: number | null = null;
 let chunks: Blob[] = [];
 let meetingTitle: string | null = null;
+
+// Number of bars the side panel renders. Keep in sync with LiveWaveform.
+const WAVE_BARS = 32;
+
+function startLevels() {
+  if (!audioCtx || !stream) return;
+  sourceNode = audioCtx.createMediaStreamSource(stream);
+  // Route the tab audio back to the user's speakers — tabCapture otherwise
+  // mutes the source tab while we hold the stream.
+  sourceNode.connect(audioCtx.destination);
+
+  analyserNode = audioCtx.createAnalyser();
+  analyserNode.fftSize = 1024; // 1024 time-domain samples per pull
+  sourceNode.connect(analyserNode);
+
+  const sampleCount = analyserNode.fftSize;
+  const buf = new Uint8Array(sampleCount);
+  const single = new Uint8Array(1);
+
+  levelsChannel = new BroadcastChannel("ottonote-levels");
+  levelsInterval = self.setInterval(() => {
+    if (!analyserNode || !levelsChannel) return;
+    analyserNode.getByteTimeDomainData(buf);
+    // Time-domain bytes oscillate around 128 (silence). The instant peak
+    // deviation from 128 is what we want for a "loudness right now" reading.
+    let peak = 0;
+    for (let i = 0; i < sampleCount; i++) {
+      const d = Math.abs(buf[i] - 128);
+      if (d > peak) peak = d;
+    }
+    // Peak is 0..128. Double it to fill the 0..255 byte range so the side
+    // panel's mapping stays uniform.
+    single[0] = Math.min(255, peak * 2);
+    levelsChannel.postMessage(single);
+  }, 33); // ~30fps
+}
+
+function stopLevels() {
+  if (levelsInterval != null) {
+    self.clearInterval(levelsInterval);
+    levelsInterval = null;
+  }
+  if (levelsChannel) {
+    // Post a flatline before closing so any listening side panel doesn't keep
+    // the last sample frozen on screen.
+    try {
+      levelsChannel.postMessage(new Uint8Array(WAVE_BARS));
+    } catch {
+      /* channel may already be closing */
+    }
+    levelsChannel.close();
+    levelsChannel = null;
+  }
+  try {
+    sourceNode?.disconnect();
+    analyserNode?.disconnect();
+  } catch {
+    /* nodes may already be detached */
+  }
+  sourceNode = null;
+  analyserNode = null;
+}
 
 async function start(streamId: string, title: string | null) {
   meetingTitle = title;
@@ -70,7 +136,7 @@ async function start(streamId: string, title: string | null) {
   });
 
   audioCtx = new AudioContext();
-  audioCtx.createMediaStreamSource(stream).connect(audioCtx.destination);
+  startLevels();
 
   chunks = [];
   recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
@@ -88,6 +154,7 @@ function stopRecorder(): Promise<Blob | null> {
     }
     recorder.onstop = () => {
       const blob = new Blob(chunks, { type: "audio/webm" });
+      stopLevels();
       stream?.getTracks().forEach((t) => t.stop());
       audioCtx?.close();
       recorder = null;

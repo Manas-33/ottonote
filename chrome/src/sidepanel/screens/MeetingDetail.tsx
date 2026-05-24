@@ -318,7 +318,6 @@ function StickyHeader({
             danger
             onClick={onDelete}
           />
-          <IconBtn name="more-horizontal" tooltip="More (coming soon)" />
         </div>
       </div>
 

@@ -108,7 +108,7 @@ export function Logo({ size = 22 }: { size?: number }) {
 }
 
 // ---------- StatusChip ----------
-type ChipStatus = "done" | "processing" | "failed";
+type ChipStatus = "done" | "processing" | "failed" | "cancelled";
 
 const CHIP_STYLES: Record<
   ChipStatus,
@@ -128,6 +128,11 @@ const CHIP_STYLES: Record<
     label: "FAILED",
     cls: "text-red-800 bg-red-100 dark:text-red-300 dark:bg-red-900/40",
     dot: "bg-red-500",
+  },
+  cancelled: {
+    label: "CANCELLED",
+    cls: "text-paper-600 bg-paper-200 dark:text-paper-400 dark:bg-paper-800",
+    dot: "bg-paper-400 dark:bg-paper-500",
   },
 };
 

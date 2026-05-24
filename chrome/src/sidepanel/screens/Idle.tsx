@@ -194,10 +194,11 @@ function MeetingRow({
 
 function toChipStatus(
   s: MeetingStatus
-): "done" | "processing" | "failed" | null {
+): "done" | "processing" | "failed" | "cancelled" | null {
   if (s === "done") return "done";
   if (s === "processing" || s === "pending") return "processing";
-  if (s === "failed" || s === "cancelled") return "failed";
+  if (s === "failed") return "failed";
+  if (s === "cancelled") return "cancelled";
   return null;
 }
 

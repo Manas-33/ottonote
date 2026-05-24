@@ -642,33 +642,11 @@ function DoneBody({
           count={String(meeting.segments.length)}
           tint="ink"
         >
-          {/* Speakers legend */}
-          <div className="-mx-4 px-4 pb-3 -mt-1 mb-1 flex items-center gap-3 flex-wrap">
-            {Array.from(speakers).map(([name, style]) => (
-              <div
-                key={name ?? "unknown"}
-                className="inline-flex items-center gap-1.5"
-              >
-                <span className={`w-2 h-2 rounded-sm ${style.dot}`} />
-                <span
-                  className={`font-mono text-[10px] uppercase tracking-[0.12em] ${style.accent}`}
-                >
-                  {name ?? "Unknown"}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <div className="space-y-3 pt-1">
-            {meeting.segments.map((s) => (
-              <TranscriptRow
-                key={s.idx}
-                segment={s}
-                style={speakers.get(s.speaker) ?? SPEAKER_PALETTE[0]}
-                onPlay={() => seekTo(s.start_sec)}
-              />
-            ))}
-          </div>
+          <TranscriptBody
+            segments={meeting.segments}
+            speakers={speakers}
+            onPlay={seekTo}
+          />
         </Section>
       )}
 
@@ -846,15 +824,130 @@ function ActionRow({
   );
 }
 
+// ---------- Transcript body (speakers legend + Find + segments) ----------
+function TranscriptBody({
+  segments,
+  speakers,
+  onPlay,
+}: {
+  segments: Segment[];
+  speakers: Map<string | null, SpeakerStyle>;
+  onPlay: (sec: number) => void;
+}) {
+  const [findOpen, setFindOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const trimmed = query.trim();
+  const filtered = useMemo(() => {
+    if (!trimmed) return segments;
+    const q = trimmed.toLowerCase();
+    return segments.filter(
+      (s) =>
+        s.text.toLowerCase().includes(q) ||
+        (s.speaker?.toLowerCase().includes(q) ?? false)
+    );
+  }, [segments, trimmed]);
+
+  const toggleFind = () => {
+    setFindOpen((v) => {
+      const next = !v;
+      if (!next) setQuery("");
+      else queueMicrotask(() => inputRef.current?.focus());
+      return next;
+    });
+  };
+
+  return (
+    <>
+      {/* Speakers legend + Find toggle */}
+      <div className="-mx-4 px-4 pb-3 -mt-1 mb-1 flex items-center gap-3 flex-wrap">
+        {Array.from(speakers).map(([name, style]) => (
+          <div
+            key={name ?? "unknown"}
+            className="inline-flex items-center gap-1.5"
+          >
+            <span className={`w-2 h-2 rounded-sm ${style.dot}`} />
+            <span
+              className={`font-mono text-[10px] uppercase tracking-[0.12em] ${style.accent}`}
+            >
+              {name ?? "Unknown"}
+            </span>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={toggleFind}
+          className={`ml-auto font-mono text-[9.5px] uppercase tracking-[0.14em] flex items-center gap-1 transition-colors ${
+            findOpen
+              ? "text-paper-900 dark:text-paper-50"
+              : "text-paper-500 hover:text-paper-900 dark:hover:text-paper-50"
+          }`}
+        >
+          <Icon name="search" size={10} /> Find
+        </button>
+      </div>
+
+      {findOpen && (
+        <div className="-mx-2 mb-2 flex items-center gap-2">
+          <div className="relative flex-1">
+            <Icon
+              name="search"
+              size={12}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-paper-400 dark:text-paper-500"
+            />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") toggleFind();
+              }}
+              placeholder="Search transcript…"
+              className="w-full h-8 pl-8 pr-3 rounded-md bg-paper-100 dark:bg-paper-900 border border-paper-200 dark:border-paper-800 text-[12.5px] placeholder:text-paper-400 dark:placeholder:text-paper-500 focus:border-flame-500 focus:ring-2 focus:ring-flame-500/15 outline-none transition"
+            />
+          </div>
+          <span className="font-mono text-[9.5px] uppercase tracking-[0.12em] tabular-nums text-paper-500 dark:text-paper-400 shrink-0">
+            {trimmed
+              ? `${filtered.length}/${segments.length}`
+              : `${segments.length}`}
+          </span>
+        </div>
+      )}
+
+      <div className="space-y-3 pt-1">
+        {filtered.length === 0 ? (
+          <p className="text-center text-[12px] text-paper-500 dark:text-paper-400 py-6">
+            No matches for “{trimmed}”
+          </p>
+        ) : (
+          filtered.map((s) => (
+            <TranscriptRow
+              key={s.idx}
+              segment={s}
+              style={speakers.get(s.speaker) ?? SPEAKER_PALETTE[0]}
+              onPlay={() => onPlay(s.start_sec)}
+              highlight={trimmed}
+            />
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
 // ---------- Transcript row ----------
 function TranscriptRow({
   segment,
   style,
   onPlay,
+  highlight,
 }: {
   segment: Segment;
   style: SpeakerStyle;
   onPlay: () => void;
+  highlight?: string;
 }) {
   return (
     <div className="group flex gap-3 -mx-2 px-2 py-1.5 rounded-md hover:bg-paper-100/60 dark:hover:bg-paper-900/40 relative">
@@ -869,7 +962,7 @@ function TranscriptRow({
           {segment.speaker ?? "Unknown"}
         </div>
         <div className="text-[13px] leading-[1.55] text-paper-800 dark:text-paper-200 mt-0.5">
-          {segment.text}
+          <Highlight text={segment.text} query={highlight} />
         </div>
       </div>
       <button
@@ -882,6 +975,37 @@ function TranscriptRow({
       </button>
     </div>
   );
+}
+
+// ---------- Inline highlight ----------
+// Splits `text` on every case-insensitive occurrence of `query` and wraps
+// matches in a styled <mark>. No regex escaping needed because we use plain
+// string indexOf — query is treated as a literal substring.
+function Highlight({ text, query }: { text: string; query?: string }) {
+  if (!query) return <>{text}</>;
+  const out: React.ReactNode[] = [];
+  const lower = text.toLowerCase();
+  const q = query.toLowerCase();
+  let i = 0;
+  let key = 0;
+  while (i < text.length) {
+    const hit = lower.indexOf(q, i);
+    if (hit === -1) {
+      out.push(text.slice(i));
+      break;
+    }
+    if (hit > i) out.push(text.slice(i, hit));
+    out.push(
+      <mark
+        key={key++}
+        className="bg-flame-200 dark:bg-flame-500/30 text-paper-900 dark:text-paper-50 rounded-[2px] px-0.5"
+      >
+        {text.slice(hit, hit + q.length)}
+      </mark>
+    );
+    i = hit + q.length;
+  }
+  return <>{out}</>;
 }
 
 // ---------- Audio bar ----------

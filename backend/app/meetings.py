@@ -269,6 +269,47 @@ async def process_meeting(
     return _to_detail(fresh)
 
 
+@router.post(
+    "/{meeting_id}/retry",
+    response_model=MeetingDetail,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retry_meeting(
+    meeting_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MeetingDetail:
+    """Re-enqueue the pipeline for a meeting whose previous run failed or was cancelled.
+
+    The pipeline is idempotent — `_run_pipeline` wipes children at the start —
+    so retry is just status flip + re-enqueue against the same `audio_url`.
+    """
+    meeting = await _fetch_meeting(meeting_id, user, db)
+    if meeting.status not in ("failed", "cancelled"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Meeting cannot be retried (status={meeting.status})",
+        )
+    if not meeting.audio_url:
+        # Upload itself failed before storage — no audio to retry against.
+        # User must re-record.
+        raise HTTPException(
+            status_code=409,
+            detail="Meeting has no audio to retry; re-record instead",
+        )
+
+    meeting.status = "processing"
+    meeting.error_message = None
+    await db.commit()
+
+    async_result = process_meeting_task.delay(str(meeting.id))
+    meeting.task_id = async_result.id
+    await db.commit()
+
+    fresh = await _fetch_meeting(meeting.id, user, db)
+    return _to_detail(fresh)
+
+
 @router.delete(
     "/{meeting_id}/process",
     response_model=MeetingDetail,

@@ -134,6 +134,13 @@ export async function cancelMeeting(meetingId: string): Promise<Meeting> {
   return jsonOrThrow<Meeting>(res, "Cancel meeting");
 }
 
+export async function retryMeeting(meetingId: string): Promise<Meeting> {
+  const res = await apiFetch(`/meetings/${meetingId}/retry`, {
+    method: "POST",
+  });
+  return jsonOrThrow<Meeting>(res, "Retry meeting");
+}
+
 export type AudioUrl = {
   url: string;
   expires_in: number;

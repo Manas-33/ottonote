@@ -3,6 +3,7 @@ import {
   deleteMeeting,
   getAudioUrl,
   getMeeting,
+  retryMeeting,
   toggleActionItem,
   updateMeeting,
   type ActionItem,
@@ -58,12 +59,10 @@ export function MeetingDetail({
   meetingId,
   onBack,
   onDeleted,
-  onRetry,
 }: {
   meetingId: string;
   onBack: () => void;
   onDeleted: () => void;
-  onRetry?: () => void;
 }) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +141,17 @@ export function MeetingDetail({
     }
   };
 
+  const handleRetry = async () => {
+    try {
+      const updated = await retryMeeting(meeting.id);
+      setMeeting(updated);
+    } catch (err) {
+      window.alert(
+        `Retry failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  };
+
   const handleActionToggle = (item: ActionItem, status: "open" | "done") => {
     setMeeting((prev) =>
       prev
@@ -175,7 +185,7 @@ export function MeetingDetail({
       onTitleSave={handleTitleSave}
       onDelete={handleDelete}
       onActionToggle={handleActionToggle}
-      onRetry={onRetry}
+      onRetry={handleRetry}
     />
   );
 }

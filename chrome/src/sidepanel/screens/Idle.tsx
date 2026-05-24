@@ -210,20 +210,17 @@ export function Idle({
                   </div>
                   <ul>
                     {g.rows.map((m) => {
-                      const ws = m.workspace_id
-                        ? workspaceById.get(m.workspace_id)
-                        : undefined;
-                      // Only show the dot in the "All workspaces" view —
-                      // when filtered, every row shares the same color.
-                      const dotColor =
-                        selectedWorkspaceId === null && ws
-                          ? WORKSPACE_COLOR_CLASSES[ws.color].dot
+                      // Only label the row's workspace in the "All workspaces"
+                      // view — when filtered, every row shares the same one.
+                      const ws =
+                        selectedWorkspaceId === null && m.workspace_id
+                          ? workspaceById.get(m.workspace_id) ?? null
                           : null;
                       return (
                         <li key={m.id}>
                           <MeetingRow
                             m={m}
-                            dotColor={dotColor}
+                            workspace={ws}
                             onOpen={() => onOpenMeeting(m.id)}
                           />
                         </li>
@@ -241,44 +238,49 @@ export function Idle({
 
 function MeetingRow({
   m,
-  dotColor,
+  workspace,
   onOpen,
 }: {
   m: MeetingSummaryRow;
-  dotColor: string | null;
+  workspace: { name: string; color: keyof typeof WORKSPACE_COLOR_CLASSES } | null;
   onOpen: () => void;
 }) {
   const chipStatus = toChipStatus(m.status);
   const isProcessing = m.status === "processing" || m.status === "pending";
   const progress = isProcessing ? progressInfo(m.progress_step) : null;
+  const wsCls = workspace ? WORKSPACE_COLOR_CLASSES[workspace.color] : null;
   return (
     <button
       type="button"
       onClick={onOpen}
       className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-paper-100 dark:hover:bg-paper-900 transition-colors flex items-center gap-3"
     >
-      {dotColor && (
-        <span
-          className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`}
-          aria-hidden="true"
-        />
-      )}
       <div className="flex-1 min-w-0">
         <div className="text-[13.5px] font-medium truncate tracking-[-0.01em]">
           {m.title ?? "Untitled meeting"}
         </div>
-        <div className="font-mono text-[10.5px] text-paper-500 dark:text-paper-400 mt-1 tabular-nums uppercase tracking-[0.08em]">
-          {progress ? (
-            <>
-              {progress.label} · {progress.pct}%
-            </>
-          ) : (
-            <>
-              {formatRelative(m.created_at)}
-              {m.duration_sec != null &&
-                ` · ${formatShortDuration(m.duration_sec)}`}
-            </>
+        <div className="mt-1 flex items-center gap-1.5 min-w-0">
+          {workspace && wsCls && (
+            <span
+              className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-px rounded text-[9.5px] font-mono uppercase tracking-[0.08em] ${wsCls.chip} ${wsCls.chipText}`}
+            >
+              <span className={`w-1 h-1 rounded-full ${wsCls.dot}`} />
+              {workspace.name}
+            </span>
           )}
+          <span className="font-mono text-[10.5px] text-paper-500 dark:text-paper-400 tabular-nums uppercase tracking-[0.08em] truncate">
+            {progress ? (
+              <>
+                {progress.label} · {progress.pct}%
+              </>
+            ) : (
+              <>
+                {formatRelative(m.created_at)}
+                {m.duration_sec != null &&
+                  ` · ${formatShortDuration(m.duration_sec)}`}
+              </>
+            )}
+          </span>
         </div>
         {progress && (
           <div className="mt-1.5 h-[3px] rounded-full bg-paper-200 dark:bg-paper-800 overflow-hidden">

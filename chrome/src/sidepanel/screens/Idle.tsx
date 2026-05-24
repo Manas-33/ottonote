@@ -12,6 +12,7 @@ import {
   formatShortDuration,
   greeting,
   initialsFromEmail,
+  progressInfo,
 } from "../format";
 import { Icon, PanelMast, StatusChip } from "../ui";
 
@@ -210,6 +211,8 @@ function MeetingRow({
   onOpen: () => void;
 }) {
   const chipStatus = toChipStatus(m.status);
+  const isProcessing = m.status === "processing" || m.status === "pending";
+  const progress = isProcessing ? progressInfo(m.progress_step) : null;
   return (
     <button
       type="button"
@@ -221,9 +224,26 @@ function MeetingRow({
           {m.title ?? "Untitled meeting"}
         </div>
         <div className="font-mono text-[10.5px] text-paper-500 dark:text-paper-400 mt-1 tabular-nums uppercase tracking-[0.08em]">
-          {formatRelative(m.created_at)}
-          {m.duration_sec != null && ` · ${formatShortDuration(m.duration_sec)}`}
+          {progress ? (
+            <>
+              {progress.label} · {progress.pct}%
+            </>
+          ) : (
+            <>
+              {formatRelative(m.created_at)}
+              {m.duration_sec != null &&
+                ` · ${formatShortDuration(m.duration_sec)}`}
+            </>
+          )}
         </div>
+        {progress && (
+          <div className="mt-1.5 h-[3px] rounded-full bg-paper-200 dark:bg-paper-800 overflow-hidden">
+            <div
+              className="h-full bg-flame-500 transition-[width] duration-500 ease-out"
+              style={{ width: `${progress.pct}%` }}
+            />
+          </div>
+        )}
       </div>
       {chipStatus && <StatusChip status={chipStatus} />}
     </button>

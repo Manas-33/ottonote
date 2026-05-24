@@ -1,20 +1,30 @@
 import { useState } from "react";
-import { cancelMeeting } from "../../api/meetings";
+import { cancelMeeting, type ProgressStep } from "../../api/meetings";
 import { resetState, type CaptureState } from "../../state";
 import { Icon, PanelMast } from "../ui";
 
-// Backend doesn't surface per-step progress — the four-step ledger is a
-// representative UX, with "Diarizing speakers" pinned as active. Real
-// step-level state would need an API change.
+// The ledger reflects backend `progress_step` (mirrors app/tasks._run_pipeline).
+// Stage → active-index mapping:
+//   normalizing/transcribing → 1, diarizing → 2, summarizing/finalizing → 3.
+// Index 0 ("Audio uploaded") is always done when this screen renders.
+const STEP_ACTIVE_INDEX: Record<ProgressStep, number> = {
+  normalizing: 1,
+  transcribing: 1,
+  diarizing: 2,
+  summarizing: 3,
+  finalizing: 3,
+};
 
 export function Processing({
   snapshot,
   initials,
   onSettings,
+  progressStep,
 }: {
   snapshot: CaptureState;
   initials?: string;
   onSettings?: () => void;
+  progressStep?: ProgressStep | null;
 }) {
   const [busy, setBusy] = useState(false);
 
@@ -35,12 +45,20 @@ export function Processing({
     }
   };
 
-  const steps: { label: string; state: "done" | "active" | "pending" }[] = [
-    { label: "Audio uploaded", state: "done" },
-    { label: "Diarizing speakers", state: "active" },
-    { label: "Drafting summary", state: "pending" },
-    { label: "Extracting actions", state: "pending" },
+  // Default to step 1 (transcribing) when no backend step has arrived yet —
+  // the row pipeline always passes through transcription first.
+  const activeIdx = progressStep ? STEP_ACTIVE_INDEX[progressStep] : 1;
+  const labels = [
+    "Audio uploaded",
+    "Transcribing audio",
+    "Diarizing speakers",
+    "Summarizing",
   ];
+  const steps: { label: string; state: "done" | "active" | "pending" }[] =
+    labels.map((label, i) => ({
+      label,
+      state: i < activeIdx ? "done" : i === activeIdx ? "active" : "pending",
+    }));
 
   return (
     <div className="h-full flex flex-col bg-paper-50 dark:bg-paper-950">

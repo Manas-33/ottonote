@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getMeeting } from "../api/meetings";
+import { getMeeting, type ProgressStep } from "../api/meetings";
 import { clearSession, loadSession, type Session } from "../auth/session";
 import { setState, STATE_KEY, type CaptureState } from "../state";
 import { initialsFromEmail } from "./format";
@@ -16,6 +16,10 @@ export function SidePanel() {
   const [snapshot, setSnapshot] = useState<CaptureState>({ state: "idle" });
   // null = follow capture state; string = user clicked a library row.
   const [pinnedId, setPinnedId] = useState<string | null>(null);
+  // Latest pipeline stage for the currently-processing meeting. The router
+  // polls anyway to detect terminal transitions; sharing the step prop avoids
+  // a second poll inside Processing.tsx.
+  const [progressStep, setProgressStep] = useState<ProgressStep | null>(null);
 
   // ---- session ----
   useEffect(() => {
@@ -58,13 +62,17 @@ export function SidePanel() {
   // doesn't notify us when transcription finishes, so we poll the meeting and
   // bump the capture state forward when it terminates.
   useEffect(() => {
-    if (snapshot.state !== "processing" || !snapshot.meetingId) return;
+    if (snapshot.state !== "processing" || !snapshot.meetingId) {
+      setProgressStep(null);
+      return;
+    }
     const meetingId = snapshot.meetingId;
     let cancelled = false;
     const tick = async () => {
       try {
         const m = await getMeeting(meetingId);
         if (cancelled) return;
+        setProgressStep(m.progress_step);
         if (
           m.status === "done" ||
           m.status === "failed" ||
@@ -133,7 +141,13 @@ export function SidePanel() {
     case "uploading":
       return <Uploading snapshot={snapshot} initials={initials} />;
     case "processing":
-      return <Processing snapshot={snapshot} initials={initials} />;
+      return (
+        <Processing
+          snapshot={snapshot}
+          initials={initials}
+          progressStep={progressStep}
+        />
+      );
     case "done":
     case "failed":
       if (snapshot.meetingId) {

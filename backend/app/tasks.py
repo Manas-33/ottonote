@@ -78,12 +78,27 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
             normalized_path: Path | None = None
             try:
                 try:
+                    # Stage-level progress: each commit lands a new value that
+                    # API readers (Idle library, Processing screen) pick up on
+                    # their next poll. Stages are coarse — within a stage we
+                    # have no further granularity to expose.
+                    meeting.progress_step = "normalizing"
+                    await db.commit()
                     normalized_path = await asyncio.to_thread(
                         _normalize_to_wav, audio_path
                     )
+
+                    meeting.progress_step = "transcribing"
+                    await db.commit()
                     transcription = await transcribe_file(normalized_path)
+
+                    meeting.progress_step = "diarizing"
+                    await db.commit()
                     turns = await diarize_file(normalized_path)
                     labeled = assign_speakers(transcription.segments, turns)
+
+                    meeting.progress_step = "summarizing"
+                    await db.commit()
                     notes = await summarize_segments(
                         [
                             TranscriptSegment(
@@ -94,6 +109,7 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                     )
                 except Exception as e:
                     meeting.status = "failed"
+                    meeting.progress_step = None
                     meeting.error_message = str(e)[:500]
                     await db.commit()
                     raise
@@ -108,6 +124,7 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
             if meeting.status == "cancelled":
                 return
 
+            meeting.progress_step = "finalizing"
             meeting.duration_sec = transcription.duration
             meeting.language = transcription.language
             meeting.num_speakers = len({t.speaker for t in turns})
@@ -154,6 +171,8 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                     )
                 )
 
+            # Clear progress now that we've reached the terminal "done" state.
+            meeting.progress_step = None
             await db.commit()
     finally:
         await engine.dispose()

@@ -1,5 +1,30 @@
 // Shared formatting helpers for the side-panel screens.
 
+import type { ProgressStep } from "../api/meetings";
+
+// Maps each pipeline stage to a percentage along the library shimmer bar
+// and a short human label. Backend emits the literal step names; here we
+// own the visual weighting since stages have very different durations.
+export const PROGRESS_INFO: Record<
+  ProgressStep,
+  { pct: number; label: string }
+> = {
+  normalizing: { pct: 10, label: "Preparing audio" },
+  transcribing: { pct: 35, label: "Transcribing" },
+  diarizing: { pct: 70, label: "Diarizing speakers" },
+  summarizing: { pct: 90, label: "Summarizing" },
+  finalizing: { pct: 98, label: "Finalizing" },
+};
+
+// Pre-stage fallback: meeting status flipped to "processing" but the worker
+// hasn't emitted its first step name yet (or for old meetings before the
+// progress_step column existed).
+export function progressInfo(step: ProgressStep | null | undefined) {
+  if (!step) return { pct: 5, label: "Queued" };
+  return PROGRESS_INFO[step];
+}
+
+
 export function formatDuration(seconds: number): string {
   const total = Math.round(seconds);
   const m = Math.floor(total / 60)

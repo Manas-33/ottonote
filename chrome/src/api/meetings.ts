@@ -7,6 +7,15 @@ export type MeetingStatus =
   | "failed"
   | "cancelled";
 
+// Mirrors backend tasks._run_pipeline stages. Null when status is not
+// "processing" (or hasn't yet entered a named stage).
+export type ProgressStep =
+  | "normalizing"
+  | "transcribing"
+  | "diarizing"
+  | "summarizing"
+  | "finalizing";
+
 export type Segment = {
   idx: number;
   start_sec: number;
@@ -44,6 +53,7 @@ export type Meeting = {
   id: string;
   title: string | null;
   status: MeetingStatus;
+  progress_step: ProgressStep | null;
   task_id: string | null;
   error_message: string | null;
   duration_sec: number | null;
@@ -68,6 +78,7 @@ export type MeetingSummaryRow = {
   id: string;
   title: string | null;
   status: MeetingStatus;
+  progress_step: ProgressStep | null;
   duration_sec: number | null;
   language: string | null;
   num_speakers: number | null;

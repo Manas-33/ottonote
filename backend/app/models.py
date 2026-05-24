@@ -43,6 +43,9 @@ class Meeting(Base):
     audio_url: Mapped[str | None] = mapped_column(Text)  # filled in only if we store audio
     error_message: Mapped[str | None] = mapped_column(Text)
     task_id: Mapped[str | None] = mapped_column(String(64))  # Celery AsyncResult id
+    # Current pipeline stage while status=processing. One of: normalizing,
+    # transcribing, diarizing, summarizing, finalizing. Null otherwise.
+    progress_step: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -63,6 +63,7 @@ class MeetingSummaryRow(BaseModel):
     id: uuid.UUID
     title: str | None
     status: str
+    progress_step: str | None
     duration_sec: float | None
     language: str | None
     num_speakers: int | None
@@ -73,6 +74,7 @@ class MeetingDetail(BaseModel):
     id: uuid.UUID
     title: str | None
     status: str
+    progress_step: str | None
     duration_sec: float | None
     language: str | None
     num_speakers: int | None
@@ -90,6 +92,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
         id=m.id,
         title=m.title,
         status=m.status,
+        progress_step=m.progress_step,
         duration_sec=m.duration_sec,
         language=m.language,
         num_speakers=m.num_speakers,
@@ -190,6 +193,7 @@ async def list_meetings(
             id=m.id,
             title=m.title,
             status=m.status,
+            progress_step=m.progress_step,
             duration_sec=m.duration_sec,
             language=m.language,
             num_speakers=m.num_speakers,
@@ -258,6 +262,7 @@ async def process_meeting(
 
     meeting.status = "processing"
     meeting.error_message = None
+    meeting.progress_step = None
     meeting.audio_url = storage_path
     await db.commit()
 
@@ -300,6 +305,7 @@ async def retry_meeting(
 
     meeting.status = "processing"
     meeting.error_message = None
+    meeting.progress_step = None
     await db.commit()
 
     async_result = process_meeting_task.delay(str(meeting.id))
@@ -334,6 +340,7 @@ async def cancel_meeting_processing(
 
     meeting.status = "cancelled"
     meeting.error_message = "Cancelled by user"
+    meeting.progress_step = None
     await db.commit()
 
     fresh = await _fetch_meeting(meeting.id, user, db)

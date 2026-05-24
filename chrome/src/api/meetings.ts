@@ -104,6 +104,26 @@ export async function getMeeting(meetingId: string): Promise<Meeting> {
   return jsonOrThrow<Meeting>(res, "Get meeting");
 }
 
+export async function updateMeeting(
+  meetingId: string,
+  patch: { title?: string | null }
+): Promise<Meeting> {
+  const res = await apiFetch(`/meetings/${meetingId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return jsonOrThrow<Meeting>(res, "Update meeting");
+}
+
+export async function deleteMeeting(meetingId: string): Promise<void> {
+  const res = await apiFetch(`/meetings/${meetingId}`, { method: "DELETE" });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Delete failed (${res.status}): ${detail.slice(0, 200)}`);
+  }
+}
+
 export async function cancelMeeting(meetingId: string): Promise<Meeting> {
   const res = await apiFetch(`/meetings/${meetingId}/process`, {
     method: "DELETE",

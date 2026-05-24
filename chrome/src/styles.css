@@ -190,6 +190,88 @@ button.secondary:hover {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.sp-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  margin-bottom: 12px;
+}
+
+.sp-search:focus {
+  outline: none;
+  border-color: #111;
+}
+
+.sp-list-item {
+  position: relative;
+}
+
+.sp-list-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #aaa;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.sp-list-delete:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.sp-title-clickable {
+  cursor: text;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: 0 -4px 8px;
+}
+
+.sp-title-clickable:hover {
+  background: #f4f4f4;
+}
+
+.sp-title-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 16px;
+  font-weight: 600;
+  color: #111;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-family: inherit;
+  margin: 0 0 8px;
+}
+
+.sp-title-input:focus {
+  outline: none;
+  border-color: #111;
+}
+
+.sp-danger {
+  color: #b91c1c !important;
+  border-color: #fecaca !important;
+}
+
+.sp-danger:hover {
+  background: #fee2e2 !important;
+}
+
 .sp-status {
   display: inline-block;
   padding: 1px 6px;

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  deleteMeeting,
   getAudioUrl,
   getMeeting,
   listMeetings,
   toggleActionItem,
+  updateMeeting,
   type ActionItem,
   type Meeting,
   type MeetingSummaryRow,
@@ -90,6 +92,7 @@ export function SidePanel() {
       <MeetingDetail
         meetingId={effective}
         snapshot={snapshot}
+        onDeleted={() => setUserView("list")}
       />
     </Shell>
   );
@@ -123,6 +126,7 @@ function Shell({
 function MeetingList({ onSelect }: { onSelect: (id: string) => void }) {
   const [rows, setRows] = useState<MeetingSummaryRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -140,13 +144,29 @@ function MeetingList({ onSelect }: { onSelect: (id: string) => void }) {
         });
     };
     load();
-    // Re-poll lightly so a freshly-created meeting shows up in the list.
     const handle = window.setInterval(load, 5000);
     return () => {
       cancelled = true;
       window.clearInterval(handle);
     };
   }, []);
+
+  const handleDelete = async (id: string, title: string | null) => {
+    const label = title ?? "this meeting";
+    if (!window.confirm(`Delete "${label}"? This cannot be undone.`)) return;
+    const before = rows;
+    // Optimistic remove.
+    setRows((rs) => rs?.filter((r) => r.id !== id) ?? rs);
+    try {
+      await deleteMeeting(id);
+    } catch (err) {
+      console.error(err);
+      setRows(before ?? null);
+      window.alert(
+        `Delete failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  };
 
   if (error) return <p className="empty error">{error}</p>;
   if (!rows) return <p className="empty">Loading…</p>;
@@ -158,36 +178,66 @@ function MeetingList({ onSelect }: { onSelect: (id: string) => void }) {
     );
   }
 
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? rows.filter((m) => (m.title ?? "").toLowerCase().includes(q))
+    : rows;
+
   return (
-    <ul className="sp-list">
-      {rows.map((m) => (
-        <li key={m.id}>
-          <button className="sp-list-row" onClick={() => onSelect(m.id)}>
-            <div className="sp-list-title">
-              {m.title ?? "Untitled meeting"}
-            </div>
-            <div className="sp-list-meta">
-              <span className={`sp-status sp-status-${m.status}`}>
-                {m.status}
-              </span>
-              {m.duration_sec != null && (
-                <span> · {formatDuration(m.duration_sec)}</span>
-              )}
-              <span> · {formatRelative(m.created_at)}</span>
-            </div>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <>
+      <input
+        type="search"
+        className="sp-search"
+        placeholder="Search meetings…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      {filtered.length === 0 ? (
+        <p className="empty">No meetings match "{query}".</p>
+      ) : (
+        <ul className="sp-list">
+          {filtered.map((m) => (
+            <li key={m.id} className="sp-list-item">
+              <button className="sp-list-row" onClick={() => onSelect(m.id)}>
+                <div className="sp-list-title">
+                  {m.title ?? "Untitled meeting"}
+                </div>
+                <div className="sp-list-meta">
+                  <span className={`sp-status sp-status-${m.status}`}>
+                    {m.status}
+                  </span>
+                  {m.duration_sec != null && (
+                    <span> · {formatDuration(m.duration_sec)}</span>
+                  )}
+                  <span> · {formatRelative(m.created_at)}</span>
+                </div>
+              </button>
+              <button
+                className="sp-list-delete"
+                title="Delete meeting"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete(m.id, m.title);
+                }}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
 function MeetingDetail({
   meetingId,
   snapshot,
+  onDeleted,
 }: {
   meetingId: string;
   snapshot: CaptureState;
+  onDeleted: () => void;
 }) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -291,6 +341,36 @@ function MeetingDetail({
           );
         });
       }}
+      onTitleSave={async (newTitle) => {
+        const trimmed = newTitle.trim();
+        // Optimistic update.
+        setMeeting((prev) => (prev ? { ...prev, title: trimmed || null } : prev));
+        try {
+          const updated = await updateMeeting(meeting.id, { title: trimmed });
+          setMeeting(updated);
+        } catch (err) {
+          console.error(err);
+          setMeeting(meeting); // revert
+          window.alert(
+            `Couldn't save title: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+        }
+      }}
+      onDelete={async () => {
+        const label = meeting.title ?? "this meeting";
+        if (!window.confirm(`Delete "${label}"? This cannot be undone.`)) return;
+        try {
+          await deleteMeeting(meeting.id);
+          onDeleted();
+        } catch (err) {
+          console.error(err);
+          window.alert(
+            `Delete failed: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }}
     />
   );
 }
@@ -298,15 +378,20 @@ function MeetingDetail({
 function MeetingView({
   meeting,
   onActionItemToggle,
+  onTitleSave,
+  onDelete,
 }: {
   meeting: Meeting;
   onActionItemToggle: (item: ActionItem, status: "open" | "done") => void;
+  onTitleSave: (newTitle: string) => void;
+  onDelete: () => void;
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const resumeAtRef = useRef<{ time: number; play: boolean } | null>(null);
+  const [editingTitle, setEditingTitle] = useState<string | null>(null);
 
   useEffect(() => {
     if (meeting.status !== "done") return;
@@ -365,7 +450,35 @@ function MeetingView({
   return (
     <>
       <section className="sp-meta">
-        <h2 className="sp-title">{meeting.title ?? "Untitled meeting"}</h2>
+        {editingTitle !== null ? (
+          <input
+            className="sp-title-input"
+            value={editingTitle}
+            autoFocus
+            onChange={(e) => setEditingTitle(e.target.value)}
+            onBlur={() => {
+              if (editingTitle !== (meeting.title ?? "")) {
+                onTitleSave(editingTitle);
+              }
+              setEditingTitle(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+              } else if (e.key === "Escape") {
+                setEditingTitle(null);
+              }
+            }}
+          />
+        ) : (
+          <h2
+            className="sp-title sp-title-clickable"
+            title="Click to edit"
+            onClick={() => setEditingTitle(meeting.title ?? "")}
+          >
+            {meeting.title ?? "Untitled meeting"}
+          </h2>
+        )}
         <div className="sp-metabar">
           <Badge>{meeting.status}</Badge>
           {meeting.duration_sec != null && (
@@ -379,14 +492,19 @@ function MeetingView({
             </Badge>
           )}
         </div>
-        {meeting.status === "done" && (
-          <div className="sp-exports">
-            <button onClick={() => downloadMarkdown(meeting)}>
-              Export markdown
-            </button>
-            <button onClick={() => openPrintable(meeting)}>Save as PDF</button>
-          </div>
-        )}
+        <div className="sp-exports">
+          {meeting.status === "done" && (
+            <>
+              <button onClick={() => downloadMarkdown(meeting)}>
+                Export markdown
+              </button>
+              <button onClick={() => openPrintable(meeting)}>Save as PDF</button>
+            </>
+          )}
+          <button className="sp-danger" onClick={onDelete}>
+            Delete
+          </button>
+        </div>
       </section>
 
       {meeting.status === "done" && (

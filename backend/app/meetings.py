@@ -297,6 +297,26 @@ async def cancel_meeting_processing(
     return _to_detail(fresh)
 
 
+class MeetingPatch(BaseModel):
+    title: str | None = None
+
+
+@router.patch("/{meeting_id}", response_model=MeetingDetail)
+async def update_meeting(
+    meeting_id: uuid.UUID,
+    body: MeetingPatch,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MeetingDetail:
+    """Update editable fields on a meeting. Currently just `title`."""
+    meeting = await _fetch_meeting(meeting_id, user, db)
+    if body.title is not None:
+        meeting.title = body.title.strip() or None
+    await db.commit()
+    fresh = await _fetch_meeting(meeting.id, user, db)
+    return _to_detail(fresh)
+
+
 class AudioUrlOut(BaseModel):
     url: str
     expires_in: int

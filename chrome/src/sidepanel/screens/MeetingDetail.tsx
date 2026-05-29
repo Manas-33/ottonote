@@ -637,23 +637,36 @@ function DoneBody({
               </div>
               <div className="space-y-2.5">
                 {Object.entries(meeting.summary.keywords).map(
-                  ([group, items]) => (
-                    <div key={group} className="flex items-baseline gap-2.5">
-                      <div className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-paper-400 dark:text-paper-500 w-[88px] shrink-0 pt-[5px]">
-                        {group.split(" ")[0]}
+                  ([group, items]) => {
+                    const cap = 4;
+                    const visible = items.slice(0, cap);
+                    const overflow = items.length - cap;
+                    return (
+                      <div key={group} className="flex items-baseline gap-2.5">
+                        <div className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-paper-400 dark:text-paper-500 w-[88px] shrink-0 pt-[5px]">
+                          {group.split(" ")[0]}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {visible.map((k) => (
+                            <span
+                              key={k}
+                              className="inline-flex items-center px-2 h-[22px] rounded-md text-[11.5px] bg-paper-100 dark:bg-paper-900 text-paper-700 dark:text-paper-200 border border-paper-200/70 dark:border-paper-800"
+                            >
+                              {k}
+                            </span>
+                          ))}
+                          {overflow > 0 && (
+                            <span
+                              title={items.slice(cap).join(", ")}
+                              className="inline-flex items-center px-2 h-[22px] rounded-md text-[11px] text-paper-400 dark:text-paper-500 border border-dashed border-paper-300 dark:border-paper-700 cursor-default"
+                            >
+                              +{overflow}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex flex-wrap gap-1">
-                        {items.map((k) => (
-                          <span
-                            key={k}
-                            className="inline-flex items-center px-2 h-[22px] rounded-md text-[11.5px] bg-paper-100 dark:bg-paper-900 text-paper-700 dark:text-paper-200 border border-paper-200/70 dark:border-paper-800"
-                          >
-                            {k}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )
+                    );
+                  }
                 )}
               </div>
             </div>
@@ -882,11 +895,11 @@ function Section({
 }
 
 // ---------- Confidence / verification badge ----------
-// Shows nothing for high-confidence items. For items below 80% confidence,
-// displays a pill whose appearance depends on verification status:
-//   verified=true  → green "Verified"  (was uncertain, but confirmed)
-//   verified=false → red "Flagged"     (uncertain and could not confirm)
-//   verified=null  → amber/red %       (not yet checked — legacy data)
+// Every extracted item gets a trust indicator:
+//   confidence >= 80%  → green check (high confidence, trusted)
+//   verified === true  → green "Verified" (was uncertain, confirmed by 2nd pass)
+//   verified === false → red "Flagged" (uncertain, not supported by transcript)
+//   verified === null  → amber/red % (low confidence, unverified legacy data)
 function ConfidenceBadge({
   confidence,
   verified,
@@ -894,7 +907,17 @@ function ConfidenceBadge({
   confidence: number;
   verified?: boolean | null;
 }) {
-  if (confidence >= 0.8) return null;
+  if (confidence >= 0.8) {
+    return (
+      <span
+        title={`${Math.round(confidence * 100)}% confidence`}
+        className="inline-flex items-center gap-0.5 px-1.5 h-[18px] rounded-md font-mono text-[9.5px] tabular-nums uppercase tracking-[0.08em] text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40"
+      >
+        <Icon name="check" size={9} />
+        {Math.round(confidence * 100)}%
+      </span>
+    );
+  }
 
   if (verified === true) {
     return (

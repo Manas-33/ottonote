@@ -55,6 +55,7 @@ class ActionItemOut(BaseModel):
     task: str
     due_date: str | None
     status: str
+    speaker_label: str | None
     source_segment_indices: list[int]
 
 
@@ -161,6 +162,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
                 task=a.task,
                 due_date=a.due_date,
                 status=a.status,
+                speaker_label=a.speaker_label,
                 source_segment_indices=list(a.source_segment_indices or []),
             )
             for a in m.action_items
@@ -499,5 +501,6 @@ async def update_action_item(
         task=item.task,
         due_date=item.due_date,
         status=item.status,
+        speaker_label=item.speaker_label,
         source_segment_indices=list(item.source_segment_indices or []),
     )

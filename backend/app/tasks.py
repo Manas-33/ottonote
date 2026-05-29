@@ -161,6 +161,7 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                         assignee=item.assignee,
                         task=item.task,
                         due_date=item.due_date,
+                        speaker_label=item.speaker_label,
                         source_segment_indices=item.source_segment_indices,
                     )
                 )

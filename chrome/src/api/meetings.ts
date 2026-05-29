@@ -47,6 +47,10 @@ export type ActionItem = {
   task: string;
   due_date: string | null;
   status: string;
+  // The diarized speaker who voiced the commitment (e.g. "SPEAKER_01").
+  // Used to color-code the assignee chip with the same palette as that
+  // speaker's transcript rows. Distinct from `assignee` (free-text name).
+  speaker_label: string | null;
   source_segment_indices: number[];
 };
 

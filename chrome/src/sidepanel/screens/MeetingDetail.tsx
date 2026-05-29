@@ -675,6 +675,11 @@ function DoneBody({
                   <ActionRow
                     key={a.id}
                     item={a}
+                    speakerStyle={
+                      a.speaker_label
+                        ? speakers.get(a.speaker_label) ?? null
+                        : null
+                    }
                     onToggle={() =>
                       onActionToggle(a, a.status === "done" ? "open" : "done")
                     }
@@ -694,6 +699,11 @@ function DoneBody({
                   <ActionRow
                     key={a.id}
                     item={a}
+                    speakerStyle={
+                      a.speaker_label
+                        ? speakers.get(a.speaker_label) ?? null
+                        : null
+                    }
                     onToggle={() =>
                       onActionToggle(a, a.status === "done" ? "open" : "done")
                     }
@@ -864,14 +874,22 @@ function SourceLink({
 // ---------- Action row ----------
 function ActionRow({
   item,
+  speakerStyle,
   onToggle,
   onShowSource,
 }: {
   item: ActionItem;
+  // Style for the diarized speaker who voiced this commitment. When set, we
+  // use the same color as that speaker's transcript rows so action items
+  // are visually linked back to their source. Null when no speaker_label
+  // or when the label doesn't match any diarized speaker — falls back to
+  // the default flame avatar.
+  speakerStyle: SpeakerStyle | null;
   onToggle: () => void;
   onShowSource: (indices: number[]) => void;
 }) {
   const done = item.status === "done";
+  const avatarBg = speakerStyle?.avatar ?? "bg-flame-500";
   return (
     <li>
       <div className="flex items-start gap-2.5 py-2.5 px-2 rounded-md hover:bg-paper-100/60 dark:hover:bg-paper-900/40">
@@ -898,8 +916,17 @@ function ActionRow({
           </div>
           <div className="mt-1 flex items-center gap-1.5 flex-wrap">
             {item.assignee ? (
-              <span className="inline-flex items-center gap-1 px-1.5 h-[18px] rounded-md bg-paper-100 dark:bg-paper-900 text-[10.5px] font-medium text-paper-700 dark:text-paper-200 border border-paper-200/70 dark:border-paper-800">
-                <span className="w-3 h-3 rounded-sm bg-flame-500 text-white text-[8px] flex items-center justify-center font-semibold">
+              <span
+                className="inline-flex items-center gap-1 px-1.5 h-[18px] rounded-md bg-paper-100 dark:bg-paper-900 text-[10.5px] font-medium text-paper-700 dark:text-paper-200 border border-paper-200/70 dark:border-paper-800"
+                title={
+                  item.speaker_label
+                    ? `Voiced by ${item.speaker_label}`
+                    : undefined
+                }
+              >
+                <span
+                  className={`w-3 h-3 rounded-sm text-white text-[8px] flex items-center justify-center font-semibold ${avatarBg}`}
+                >
                   {item.assignee.charAt(0).toUpperCase()}
                 </span>
                 {item.assignee}

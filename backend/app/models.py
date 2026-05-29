@@ -158,6 +158,9 @@ class ActionItem(Base):
     due_date: Mapped[str | None] = mapped_column(String(100))  # free text for now
     status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
     # open | done
+    # The diarized speaker who voiced the commitment (e.g. "SPEAKER_01").
+    # Separate from `assignee` — see note in summarize.ActionItem.
+    speaker_label: Mapped[str | None] = mapped_column(String(50))
     # Segment.idx values that support this item — used by the "show source"
     # affordance in the UI. Empty if the LLM couldn't cite a passage.
     source_segment_indices: Mapped[list] = mapped_column(

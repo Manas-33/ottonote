@@ -39,6 +39,10 @@ class ActionItem(BaseModel):
     task: str
     due_date: str | None = Field(default=None, description="ISO date or natural-language phrase")
     source_segment_indices: list[int] = Field(default_factory=list)
+    # The diarized speaker who voiced the commitment. May differ from
+    # `assignee` (e.g. "James, can you follow up?" — voiced by SPEAKER_00,
+    # assigned to James). Null if the LLM cannot attribute it.
+    speaker_label: str | None = Field(default=None)
 
 
 class CalendarEvent(BaseModel):
@@ -131,6 +135,17 @@ _RECORD_NOTES_TOOL = {
                                 "cannot point to a specific passage."
                             ),
                         },
+                        "speaker_label": {
+                            "type": "string",
+                            "description": (
+                                "The diarized speaker (SPEAKER_00, SPEAKER_01, "
+                                "...) who voiced the commitment — typically the "
+                                "person saying 'I will' or accepting an ask. "
+                                "May differ from `assignee` when one person "
+                                "assigns work to another. Omit only when the "
+                                "speaker truly cannot be determined."
+                            ),
+                        },
                     },
                     "required": ["assignee", "task", "source_segment_indices"],
                 },
@@ -195,6 +210,11 @@ _SYSTEM_PROMPT = (
     "For every decision, action item, and calendar event, cite the supporting "
     "segment indices via `source_segment_indices`. Prefer 1-3 indices that most "
     "directly support the item. Use the integer N from the [#N] marker. "
+    "For each action item, also set `speaker_label` to the SPEAKER_NN that voiced "
+    "the commitment — usually the person who said 'I will' or accepted the ask. "
+    "This may differ from `assignee` when someone assigns work to another person "
+    "(e.g. 'James, can you handle X?' → assignee=James, speaker_label=whoever was "
+    "speaking). Omit only when no speaker can be reasonably attributed. "
     "Always respond by calling the record_meeting_notes tool."
 )
 

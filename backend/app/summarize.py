@@ -192,6 +192,12 @@ _RECORD_NOTES_TOOL = {
             },
             "calendar_events": {
                 "type": "array",
+                "description": (
+                    "Any date-specific event mentioned: scheduled meetings, "
+                    "deadlines, launch dates, review dates, milestones, demos. "
+                    "If a decision or action item has a specific date, also "
+                    "create a calendar event for it."
+                ),
                 "items": {
                     "type": "object",
                     "properties": {
@@ -252,6 +258,11 @@ _SYSTEM_PROMPT = (
     "This may differ from `assignee` when someone assigns work to another person "
     "(e.g. 'James, can you handle X?' → assignee=James, speaker_label=whoever was "
     "speaking). Omit only when no speaker can be reasonably attributed. "
+    "Extract calendar_events broadly: include not just scheduled meetings but also "
+    "deadlines, launch dates, review dates, milestones, and any other date-specific "
+    "commitment mentioned in the transcript. If a decision references a specific "
+    "date (e.g. 'March 15 launch', 'demo on Friday'), create a calendar event for "
+    "it in addition to listing it as a decision. "
     "For every decision, action item, and calendar event, set `confidence` to a "
     "value between 0.0 and 1.0 indicating how certain you are the item is real: "
     "1.0 = explicitly stated and unambiguous; 0.7-0.9 = clearly implied but not "

@@ -4,9 +4,11 @@
 import { useState } from "react";
 import { getTheme, toggleTheme } from "./theme";
 import {
+  AlertTriangle,
   AlignLeft,
   ArrowRight,
   ArrowUpRight,
+  BookOpen,
   Calendar,
   Check,
   CheckSquare,
@@ -14,9 +16,14 @@ import {
   ChevronLeft,
   CornerDownRight,
   Download,
+  ExternalLink,
+  Hash,
   Info,
+  Link,
   Lock,
+  LogOut,
   Mail,
+  MessageSquare,
   Minus,
   Moon,
   MoreHorizontal,
@@ -30,15 +37,18 @@ import {
   Sun,
   Trash2,
   Upload,
+  X,
   type LucideIcon,
 } from "lucide-react";
 
 // ---------- Icon ----------
 // Register only icons the mockup uses. Add new entries as screens need them.
 const ICONS: Record<string, LucideIcon> = {
+  "alert-triangle": AlertTriangle,
   "align-left": AlignLeft,
   "arrow-right": ArrowRight,
   "arrow-up-right": ArrowUpRight,
+  "book-open": BookOpen,
   calendar: Calendar,
   check: Check,
   "check-square": CheckSquare,
@@ -46,9 +56,14 @@ const ICONS: Record<string, LucideIcon> = {
   "chevron-left": ChevronLeft,
   "corner-down-right": CornerDownRight,
   download: Download,
+  "external-link": ExternalLink,
+  hash: Hash,
   info: Info,
+  link: Link,
   lock: Lock,
+  "log-out": LogOut,
   mail: Mail,
+  "message-square": MessageSquare,
   minus: Minus,
   moon: Moon,
   "more-horizontal": MoreHorizontal,
@@ -62,6 +77,7 @@ const ICONS: Record<string, LucideIcon> = {
   sun: Sun,
   "trash-2": Trash2,
   upload: Upload,
+  x: X,
 };
 
 export type IconName = keyof typeof ICONS;

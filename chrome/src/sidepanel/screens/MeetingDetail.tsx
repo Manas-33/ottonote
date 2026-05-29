@@ -16,6 +16,7 @@ import {
   formatRelative,
   formatShortDuration,
 } from "../format";
+import { ShareMenu } from "../components/ShareMenu";
 import { Button, Icon, IconBtn, type IconName } from "../ui";
 import { useWorkspaces, WORKSPACE_COLOR_CLASSES } from "../workspace";
 
@@ -359,7 +360,7 @@ function StickyHeader({
             tooltip="Download markdown"
             onClick={() => downloadMarkdown(meeting)}
           />
-          <IconBtn name="share-2" tooltip="Share (coming soon)" />
+          <ShareMenu meeting={meeting} />
           <IconBtn
             name="trash-2"
             tooltip="Delete"

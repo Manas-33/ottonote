@@ -19,6 +19,7 @@ from app.storage import download_audio_to_tmp
 from app.summarize import (
     CONFIDENCE_THRESHOLD,
     TranscriptSegment,
+    resolve_speakers,
     summarize_segments,
     verify_notes,
 )
@@ -115,6 +116,10 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                     meeting.progress_step = "verifying"
                     await db.commit()
                     verdicts = await verify_notes(transcript_segments, notes)
+
+                    meeting.progress_step = "resolving"
+                    await db.commit()
+                    inferred_names = await resolve_speakers(transcript_segments)
                 except Exception as e:
                     meeting.status = "failed"
                     meeting.progress_step = None
@@ -137,6 +142,13 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
             meeting.language = transcription.language
             meeting.num_speakers = len({t.speaker for t in turns})
             meeting.status = "done"
+
+            # Merge LLM-inferred names with any existing user overrides.
+            # User overrides take precedence — don't clobber manual renames.
+            existing = dict(meeting.speaker_names or {})
+            for label, name in inferred_names.items():
+                existing.setdefault(label, name)
+            meeting.speaker_names = existing
 
             for idx, seg in enumerate(labeled):
                 db.add(

@@ -466,3 +466,88 @@ async def verify_notes(
     included — they're trusted without a second check.
     """
     return await asyncio.to_thread(_verify_sync, segments, notes)
+
+
+# ---------------------------------------------------------------------------
+# Speaker name resolution — infer real names from conversational cues
+# ---------------------------------------------------------------------------
+
+_RESOLVE_SPEAKERS_TOOL = {
+    "name": "record_speaker_names",
+    "description": "Record the mapping from diarized speaker labels to real names.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "speaker_names": {
+                "type": "object",
+                "description": (
+                    "Mapping from SPEAKER_NN labels to real names. Only "
+                    "include speakers whose real name you can confidently "
+                    "determine from the conversation. Omit any speaker "
+                    "whose name is uncertain."
+                ),
+                "additionalProperties": {"type": "string"},
+            },
+        },
+        "required": ["speaker_names"],
+    },
+}
+
+_RESOLVE_SPEAKERS_SYSTEM_PROMPT = (
+    "You are an assistant that identifies real names for anonymized speakers "
+    "in a meeting transcript. Each speaker is labeled SPEAKER_00, SPEAKER_01, "
+    "etc. Your job is to find their real names from conversational cues such "
+    "as greetings ('Hi Sarah'), direct address ('James, can you...'), "
+    "self-introductions ('This is Maria from...'), or third-person references "
+    "that can be linked to a speaker by context. "
+    "Only map a speaker to a name when you are confident. If a speaker's name "
+    "is never mentioned or is ambiguous, omit them — do not guess. "
+    "Always respond by calling the record_speaker_names tool."
+)
+
+
+def _resolve_speakers_sync(segments: list[TranscriptSegment]) -> dict[str, str]:
+    """Infer real names for SPEAKER_NN labels from conversational cues."""
+    if not settings.anthropic_api_key:
+        return {}
+
+    speakers = {s.speaker for s in segments if s.speaker}
+    if len(speakers) < 2:
+        return {}
+
+    client = Anthropic(api_key=settings.anthropic_api_key)
+    transcript = _format_transcript(segments)
+
+    message = client.messages.create(
+        model=settings.anthropic_model,
+        max_tokens=512,
+        system=_RESOLVE_SPEAKERS_SYSTEM_PROMPT,
+        tools=[_RESOLVE_SPEAKERS_TOOL],
+        tool_choice={"type": "tool", "name": "record_speaker_names"},
+        messages=[{"role": "user", "content": f"Transcript:\n\n{transcript}"}],
+    )
+
+    for block in message.content:
+        if block.type == "tool_use" and block.name == "record_speaker_names":
+            raw = block.input.get("speaker_names", {})
+            return {
+                k: v.strip()
+                for k, v in raw.items()
+                if isinstance(k, str)
+                and isinstance(v, str)
+                and v.strip()
+                and k in speakers
+            }
+
+    return {}
+
+
+async def resolve_speakers(
+    segments: list[TranscriptSegment],
+) -> dict[str, str]:
+    """Map SPEAKER_NN labels to real names inferred from the transcript.
+
+    Returns a dict like {"SPEAKER_00": "Sarah", "SPEAKER_01": "James"}.
+    Speakers whose names can't be determined are omitted.
+    """
+    return await asyncio.to_thread(_resolve_speakers_sync, segments)

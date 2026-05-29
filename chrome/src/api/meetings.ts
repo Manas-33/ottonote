@@ -15,6 +15,7 @@ export type ProgressStep =
   | "diarizing"
   | "summarizing"
   | "verifying"
+  | "resolving"
   | "finalizing";
 
 export type Segment = {

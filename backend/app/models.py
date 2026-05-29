@@ -78,7 +78,7 @@ class Meeting(Base):
     error_message: Mapped[str | None] = mapped_column(Text)
     task_id: Mapped[str | None] = mapped_column(String(64))  # Celery AsyncResult id
     # Current pipeline stage while status=processing. One of: normalizing,
-    # transcribing, diarizing, summarizing, verifying, finalizing. Null otherwise.
+    # transcribing, diarizing, summarizing, verifying, resolving, finalizing.
     progress_step: Mapped[str | None] = mapped_column(String(32))
     # User-supplied overrides for pyannote's anonymous SPEAKER_NN labels.
     # Shape: {"SPEAKER_00": "Sarah", "SPEAKER_01": "James"}. Per-meeting —

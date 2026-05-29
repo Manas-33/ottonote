@@ -1007,6 +1007,7 @@ function ActionRow({
 }) {
   const done = item.status === "done";
   const avatarBg = speakerStyle?.avatar ?? "bg-flame-500";
+  const assigneeName = displayName(item.assignee, speakerNames);
   const voicedBy = item.speaker_label
     ? displayName(item.speaker_label, speakerNames)
     : null;
@@ -1043,9 +1044,9 @@ function ActionRow({
                 <span
                   className={`w-3 h-3 rounded-sm text-white text-[8px] flex items-center justify-center font-semibold ${avatarBg}`}
                 >
-                  {item.assignee.charAt(0).toUpperCase()}
+                  {assigneeName.charAt(0).toUpperCase()}
                 </span>
-                {item.assignee}
+                {assigneeName}
               </span>
             ) : (
               <span className="inline-flex items-center px-1.5 h-[18px] rounded-md border border-dashed border-paper-300 dark:border-paper-700 text-[10.5px] text-paper-500 dark:text-paper-400">

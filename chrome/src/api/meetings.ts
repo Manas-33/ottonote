@@ -78,6 +78,9 @@ export type Meeting = {
   summary: Summary | null;
   action_items: ActionItem[];
   calendar_events: CalendarEvent[];
+  // User-supplied overrides for pyannote SPEAKER_NN labels. Per-meeting.
+  // Empty when nobody has been renamed.
+  speaker_names: Record<string, string>;
 };
 
 async function jsonOrThrow<T>(res: Response, what: string): Promise<T> {
@@ -146,7 +149,12 @@ export async function getMeeting(meetingId: string): Promise<Meeting> {
 
 export async function updateMeeting(
   meetingId: string,
-  patch: { title?: string | null; workspace_id?: string | null }
+  patch: {
+    title?: string | null;
+    workspace_id?: string | null;
+    // Full mapping; replaces stored dict. Empty object clears all overrides.
+    speaker_names?: Record<string, string>;
+  }
 ): Promise<Meeting> {
   const res = await apiFetch(`/meetings/${meetingId}`, {
     method: "PATCH",

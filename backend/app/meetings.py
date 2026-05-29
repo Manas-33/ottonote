@@ -97,6 +97,9 @@ class MeetingDetail(BaseModel):
     summary: SummaryOut | None
     action_items: list[ActionItemOut]
     calendar_events: list[CalendarEventOut]
+    # User-supplied overrides for pyannote's SPEAKER_NN labels — empty when
+    # the user hasn't renamed anyone.
+    speaker_names: dict[str, str]
 
 
 def _decisions_out(raw: list | None) -> list[DecisionOut]:
@@ -177,6 +180,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
             )
             for c in m.calendar_events
         ],
+        speaker_names=dict(m.speaker_names or {}),
     )
 
 
@@ -414,6 +418,10 @@ async def cancel_meeting_processing(
 class MeetingPatch(BaseModel):
     title: str | None = None
     workspace_id: uuid.UUID | None = None
+    # When present, REPLACES the stored speaker_names dict. Client owns the
+    # full mapping in state and sends it whole — keeps merge semantics out
+    # of the server. Empty dict clears all overrides.
+    speaker_names: dict[str, str] | None = None
 
 
 @router.patch("/{meeting_id}", response_model=MeetingDetail)
@@ -423,7 +431,7 @@ async def update_meeting(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> MeetingDetail:
-    """Update editable fields on a meeting (title, workspace)."""
+    """Update editable fields on a meeting (title, workspace, speaker names)."""
     meeting = await _fetch_meeting(meeting_id, user, db)
     if body.title is not None:
         meeting.title = body.title.strip() or None
@@ -436,6 +444,14 @@ async def update_meeting(
         if not ws:
             raise HTTPException(status_code=404, detail="Workspace not found")
         meeting.workspace_id = ws.id
+    if body.speaker_names is not None:
+        # Strip whitespace; drop empty values so cleared keys disappear from
+        # the dict instead of mapping to "".
+        meeting.speaker_names = {
+            k: v.strip()
+            for k, v in body.speaker_names.items()
+            if isinstance(v, str) and v.strip()
+        }
     await db.commit()
     fresh = await _fetch_meeting(meeting.id, user, db)
     return _to_detail(fresh)

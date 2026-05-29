@@ -169,6 +169,27 @@ export function MeetingDetail({
     }
   };
 
+  const handleRenameSpeaker = (label: string, name: string) => {
+    // Empty name = clear the override. Build the next map first, optimistic
+    // update, then PATCH the whole dict (server replaces). Roll back on error.
+    const previous = meeting.speaker_names;
+    const next = { ...previous };
+    const trimmed = name.trim();
+    if (trimmed) next[label] = trimmed;
+    else delete next[label];
+    updateLocal({ speaker_names: next });
+    updateMeeting(meeting.id, { speaker_names: next })
+      .then((updated) => setMeeting(updated))
+      .catch((err) => {
+        updateLocal({ speaker_names: previous });
+        window.alert(
+          `Couldn't rename speaker: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      });
+  };
+
   const handleActionToggle = (item: ActionItem, status: "open" | "done") => {
     setMeeting((prev) =>
       prev
@@ -204,6 +225,7 @@ export function MeetingDetail({
       onActionToggle={handleActionToggle}
       onRetry={handleRetry}
       onWorkspaceChange={handleWorkspaceChange}
+      onRenameSpeaker={handleRenameSpeaker}
     />
   );
 }
@@ -242,6 +264,7 @@ function DetailLayout({
   onActionToggle,
   onRetry,
   onWorkspaceChange,
+  onRenameSpeaker,
 }: {
   meeting: Meeting;
   onBack: () => void;
@@ -250,6 +273,7 @@ function DetailLayout({
   onActionToggle: (item: ActionItem, status: "open" | "done") => void;
   onRetry?: () => void;
   onWorkspaceChange: (workspaceId: string) => void;
+  onRenameSpeaker: (label: string, name: string) => void;
 }) {
   const speakers = useMemo(
     () => deriveSpeakers(meeting.segments),
@@ -276,6 +300,7 @@ function DetailLayout({
             meeting={meeting}
             speakers={speakers}
             onActionToggle={onActionToggle}
+            onRenameSpeaker={onRenameSpeaker}
           />
         )}
       </div>
@@ -373,15 +398,18 @@ function StickyHeader({
         <div className="mt-3 flex items-center gap-3 min-w-0">
           {speakerCount > 0 && (
             <div className="flex -space-x-1.5">
-              {Array.from(speakers).map(([name, style]) => (
-                <div
-                  key={name ?? "unknown"}
-                  title={name ?? "Unknown"}
-                  className={`w-6 h-6 rounded-full ring-2 ring-paper-50 dark:ring-paper-950 ${style.avatar} text-white text-[10px] font-mono font-semibold flex items-center justify-center`}
-                >
-                  {(name ?? "?").charAt(0).toUpperCase()}
-                </div>
-              ))}
+              {Array.from(speakers).map(([label, style]) => {
+                const display = displayName(label, meeting.speaker_names);
+                return (
+                  <div
+                    key={label ?? "unknown"}
+                    title={display}
+                    className={`w-6 h-6 rounded-full ring-2 ring-paper-50 dark:ring-paper-950 ${style.avatar} text-white text-[10px] font-mono font-semibold flex items-center justify-center`}
+                  >
+                    {display.charAt(0).toUpperCase()}
+                  </div>
+                );
+              })}
             </div>
           )}
           <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-paper-500 dark:text-paper-400 truncate">
@@ -408,10 +436,12 @@ function DoneBody({
   meeting,
   speakers,
   onActionToggle,
+  onRenameSpeaker,
 }: {
   meeting: Meeting;
   speakers: Map<string | null, SpeakerStyle>;
   onActionToggle: (item: ActionItem, status: "open" | "done") => void;
+  onRenameSpeaker: (label: string, name: string) => void;
 }) {
   const [open, setOpen] = useState({
     summary: true,
@@ -680,6 +710,7 @@ function DoneBody({
                         ? speakers.get(a.speaker_label) ?? null
                         : null
                     }
+                    speakerNames={meeting.speaker_names}
                     onToggle={() =>
                       onActionToggle(a, a.status === "done" ? "open" : "done")
                     }
@@ -704,6 +735,7 @@ function DoneBody({
                         ? speakers.get(a.speaker_label) ?? null
                         : null
                     }
+                    speakerNames={meeting.speaker_names}
                     onToggle={() =>
                       onActionToggle(a, a.status === "done" ? "open" : "done")
                     }
@@ -729,7 +761,9 @@ function DoneBody({
           <TranscriptBody
             segments={meeting.segments}
             speakers={speakers}
+            speakerNames={meeting.speaker_names}
             onPlay={seekTo}
+            onRenameSpeaker={onRenameSpeaker}
             highlighted={highlighted}
           />
         </Section>
@@ -875,6 +909,7 @@ function SourceLink({
 function ActionRow({
   item,
   speakerStyle,
+  speakerNames,
   onToggle,
   onShowSource,
 }: {
@@ -885,11 +920,15 @@ function ActionRow({
   // or when the label doesn't match any diarized speaker — falls back to
   // the default flame avatar.
   speakerStyle: SpeakerStyle | null;
+  speakerNames: Record<string, string>;
   onToggle: () => void;
   onShowSource: (indices: number[]) => void;
 }) {
   const done = item.status === "done";
   const avatarBg = speakerStyle?.avatar ?? "bg-flame-500";
+  const voicedBy = item.speaker_label
+    ? displayName(item.speaker_label, speakerNames)
+    : null;
   return (
     <li>
       <div className="flex items-start gap-2.5 py-2.5 px-2 rounded-md hover:bg-paper-100/60 dark:hover:bg-paper-900/40">
@@ -918,11 +957,7 @@ function ActionRow({
             {item.assignee ? (
               <span
                 className="inline-flex items-center gap-1 px-1.5 h-[18px] rounded-md bg-paper-100 dark:bg-paper-900 text-[10.5px] font-medium text-paper-700 dark:text-paper-200 border border-paper-200/70 dark:border-paper-800"
-                title={
-                  item.speaker_label
-                    ? `Voiced by ${item.speaker_label}`
-                    : undefined
-                }
+                title={voicedBy ? `Voiced by ${voicedBy}` : undefined}
               >
                 <span
                   className={`w-3 h-3 rounded-sm text-white text-[8px] flex items-center justify-center font-semibold ${avatarBg}`}
@@ -965,12 +1000,16 @@ function ActionRow({
 function TranscriptBody({
   segments,
   speakers,
+  speakerNames,
   onPlay,
+  onRenameSpeaker,
   highlighted,
 }: {
   segments: Segment[];
   speakers: Map<string | null, SpeakerStyle>;
+  speakerNames: Record<string, string>;
   onPlay: (sec: number) => void;
+  onRenameSpeaker: (label: string, name: string) => void;
   highlighted: Set<number>;
 }) {
   const [findOpen, setFindOpen] = useState(false);
@@ -999,20 +1038,16 @@ function TranscriptBody({
 
   return (
     <>
-      {/* Speakers legend + Find toggle */}
+      {/* Speakers legend + Find toggle. Click any chip to rename. */}
       <div className="-mx-4 px-4 pb-3 -mt-1 mb-1 flex items-center gap-3 flex-wrap">
-        {Array.from(speakers).map(([name, style]) => (
-          <div
-            key={name ?? "unknown"}
-            className="inline-flex items-center gap-1.5"
-          >
-            <span className={`w-2 h-2 rounded-sm ${style.dot}`} />
-            <span
-              className={`font-mono text-[10px] uppercase tracking-[0.12em] ${style.accent}`}
-            >
-              {name ?? "Unknown"}
-            </span>
-          </div>
+        {Array.from(speakers).map(([label, style]) => (
+          <SpeakerLegendChip
+            key={label ?? "unknown"}
+            label={label}
+            style={style}
+            speakerNames={speakerNames}
+            onRename={onRenameSpeaker}
+          />
         ))}
         <button
           type="button"
@@ -1066,6 +1101,7 @@ function TranscriptBody({
               key={s.idx}
               segment={s}
               style={speakers.get(s.speaker) ?? SPEAKER_PALETTE[0]}
+              speakerNames={speakerNames}
               onPlay={() => onPlay(s.start_sec)}
               highlight={trimmed}
               flashed={highlighted.has(s.idx)}
@@ -1081,12 +1117,14 @@ function TranscriptBody({
 function TranscriptRow({
   segment,
   style,
+  speakerNames,
   onPlay,
   highlight,
   flashed,
 }: {
   segment: Segment;
   style: SpeakerStyle;
+  speakerNames: Record<string, string>;
   onPlay: () => void;
   highlight?: string;
   // True when a "show source" click is targeting this segment. Drives a
@@ -1110,7 +1148,7 @@ function TranscriptRow({
           className={`inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] font-medium ${style.accent}`}
         >
           <span className={`w-1.5 h-1.5 rounded-sm ${style.dot}`} />
-          {segment.speaker ?? "Unknown"}
+          {displayName(segment.speaker, speakerNames)}
         </div>
         <div className="text-[13px] leading-[1.55] text-paper-800 dark:text-paper-200 mt-0.5">
           <Highlight text={segment.text} query={highlight} />
@@ -1210,6 +1248,105 @@ function deriveSpeakers(
     }
   }
   return seen;
+}
+
+// Resolve a raw diarized label (e.g. "SPEAKER_00") through the per-meeting
+// rename map. Null label = "Unknown" — the diarizer couldn't attribute the
+// segment. Used everywhere a speaker appears in the UI so a single rename
+// propagates without per-call substitution.
+function displayName(
+  label: string | null,
+  names: Record<string, string>
+): string {
+  if (!label) return "Unknown";
+  return names[label] ?? label;
+}
+
+// Clickable legend chip — single-click reveals an inline input pre-filled
+// with the current name. Enter (or blur) saves, Escape cancels. Submitting
+// an empty value clears the override and falls back to the raw SPEAKER_NN.
+function SpeakerLegendChip({
+  label,
+  style,
+  speakerNames,
+  onRename,
+}: {
+  label: string | null;
+  style: SpeakerStyle;
+  speakerNames: Record<string, string>;
+  onRename: (label: string, name: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const current = displayName(label, speakerNames);
+  const [draft, setDraft] = useState(current);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!editing) setDraft(current);
+  }, [current, editing]);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  // Unattributed segments (label === null) have no key to store against —
+  // skip the rename affordance for that chip.
+  if (label === null) {
+    return (
+      <div className="inline-flex items-center gap-1.5">
+        <span className={`w-2 h-2 rounded-sm ${style.dot}`} />
+        <span
+          className={`font-mono text-[10px] uppercase tracking-[0.12em] ${style.accent}`}
+        >
+          Unknown
+        </span>
+      </div>
+    );
+  }
+
+  const commit = () => {
+    setEditing(false);
+    if (draft.trim() !== current) onRename(label, draft);
+  };
+
+  if (editing) {
+    return (
+      <div className="inline-flex items-center gap-1.5">
+        <span className={`w-2 h-2 rounded-sm ${style.dot}`} />
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            else if (e.key === "Escape") {
+              setDraft(current);
+              setEditing(false);
+            }
+          }}
+          placeholder={label}
+          className={`font-mono text-[10px] uppercase tracking-[0.12em] bg-transparent border-b border-paper-300 dark:border-paper-700 focus:border-flame-500 focus:outline-none w-24 ${style.accent}`}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      title="Click to rename"
+      className="inline-flex items-center gap-1.5 cursor-text"
+    >
+      <span className={`w-2 h-2 rounded-sm ${style.dot}`} />
+      <span
+        className={`font-mono text-[10px] uppercase tracking-[0.12em] ${style.accent} hover:underline decoration-dotted underline-offset-2`}
+      >
+        {current}
+      </span>
+    </button>
+  );
 }
 
 // ---------- MarkedText ----------

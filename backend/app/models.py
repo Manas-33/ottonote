@@ -80,6 +80,10 @@ class Meeting(Base):
     # Current pipeline stage while status=processing. One of: normalizing,
     # transcribing, diarizing, summarizing, finalizing. Null otherwise.
     progress_step: Mapped[str | None] = mapped_column(String(32))
+    # User-supplied overrides for pyannote's anonymous SPEAKER_NN labels.
+    # Shape: {"SPEAKER_00": "Sarah", "SPEAKER_01": "James"}. Per-meeting —
+    # pyannote labels are not consistent across meetings.
+    speaker_names: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

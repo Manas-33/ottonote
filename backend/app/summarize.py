@@ -316,3 +316,153 @@ def _summarize_sync(segments: list[TranscriptSegment]) -> MeetingNotes:
 
 async def summarize_segments(segments: list[TranscriptSegment]) -> MeetingNotes:
     return await asyncio.to_thread(_summarize_sync, segments)
+
+
+# ---------------------------------------------------------------------------
+# Verification pass — second LLM call for low-confidence items
+# ---------------------------------------------------------------------------
+
+CONFIDENCE_THRESHOLD = 0.8
+
+class VerificationVerdict(BaseModel):
+    item_key: str = Field(description="Key from the input list, e.g. 'action_0'")
+    verified: bool = Field(description="True if the transcript supports the item")
+
+
+class VerificationResult(BaseModel):
+    verdicts: list[VerificationVerdict] = Field(default_factory=list)
+
+
+_VERIFY_TOOL = {
+    "name": "record_verdicts",
+    "description": "Record verification verdicts for extracted meeting items.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "verdicts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "item_key": {
+                            "type": "string",
+                            "description": "The key identifying the item (e.g. 'action_0').",
+                        },
+                        "verified": {
+                            "type": "boolean",
+                            "description": (
+                                "true if the transcript genuinely supports this "
+                                "item; false if the item appears hallucinated, "
+                                "overstated, or not grounded in the transcript."
+                            ),
+                        },
+                    },
+                    "required": ["item_key", "verified"],
+                },
+            },
+        },
+        "required": ["verdicts"],
+    },
+}
+
+_VERIFY_SYSTEM_PROMPT = (
+    "You are a fact-checker for meeting notes. You will receive a transcript "
+    "and a list of items that were extracted from it. Each item has a key, a "
+    "description, and the transcript segment indices it was supposedly derived "
+    "from. Your job is to check whether each item is genuinely supported by "
+    "the transcript. Set verified=true only if the transcript clearly supports "
+    "the item. Set verified=false if the item is hallucinated, significantly "
+    "overstated, or not grounded in what was actually said. "
+    "Always respond by calling the record_verdicts tool."
+)
+
+
+def _build_verification_prompt(
+    transcript: str,
+    notes: MeetingNotes,
+) -> tuple[str, list[str]]:
+    """Build the user message for the verification call.
+
+    Returns (prompt_text, list_of_item_keys) so the caller can map verdicts
+    back to items. Only includes items below CONFIDENCE_THRESHOLD.
+    """
+    lines: list[str] = []
+    keys: list[str] = []
+
+    for i, item in enumerate(notes.action_items):
+        if item.confidence < CONFIDENCE_THRESHOLD:
+            key = f"action_{i}"
+            keys.append(key)
+            segs = ", ".join(f"#{idx}" for idx in item.source_segment_indices)
+            lines.append(
+                f"- [{key}] ACTION ITEM: \"{item.task}\" "
+                f"(assignee: {item.assignee}, segments: [{segs}])"
+            )
+
+    for i, d in enumerate(notes.decisions):
+        if d.confidence < CONFIDENCE_THRESHOLD:
+            key = f"decision_{i}"
+            keys.append(key)
+            segs = ", ".join(f"#{idx}" for idx in d.source_segment_indices)
+            lines.append(
+                f"- [{key}] DECISION: \"{d.text}\" (segments: [{segs}])"
+            )
+
+    for i, ev in enumerate(notes.calendar_events):
+        if ev.confidence < CONFIDENCE_THRESHOLD:
+            key = f"event_{i}"
+            keys.append(key)
+            segs = ", ".join(f"#{idx}" for idx in ev.source_segment_indices)
+            lines.append(
+                f"- [{key}] CALENDAR EVENT: \"{ev.title}\" "
+                f"on \"{ev.datetime}\" (segments: [{segs}])"
+            )
+
+    items_block = "\n".join(lines)
+    prompt = (
+        f"Transcript:\n\n{transcript}\n\n"
+        f"Items to verify:\n\n{items_block}"
+    )
+    return prompt, keys
+
+
+def _verify_sync(
+    segments: list[TranscriptSegment],
+    notes: MeetingNotes,
+) -> dict[str, bool]:
+    """Run verification and return {item_key: verified} for checked items."""
+    transcript = _format_transcript(segments)
+    prompt, keys = _build_verification_prompt(transcript, notes)
+
+    if not keys:
+        return {}
+
+    client = Anthropic(api_key=settings.anthropic_api_key)
+    message = client.messages.create(
+        model=settings.anthropic_model,
+        max_tokens=1024,
+        system=_VERIFY_SYSTEM_PROMPT,
+        tools=[_VERIFY_TOOL],
+        tool_choice={"type": "tool", "name": "record_verdicts"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    for block in message.content:
+        if block.type == "tool_use" and block.name == "record_verdicts":
+            result = VerificationResult.model_validate(block.input)
+            return {v.item_key: v.verified for v in result.verdicts}
+
+    return {}
+
+
+async def verify_notes(
+    segments: list[TranscriptSegment],
+    notes: MeetingNotes,
+) -> dict[str, bool]:
+    """Verify low-confidence items against the transcript.
+
+    Returns a dict mapping item keys (e.g. "action_0", "decision_1") to
+    their verification verdict. Items above CONFIDENCE_THRESHOLD are not
+    included — they're trusted without a second check.
+    """
+    return await asyncio.to_thread(_verify_sync, segments, notes)

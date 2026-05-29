@@ -78,7 +78,7 @@ class Meeting(Base):
     error_message: Mapped[str | None] = mapped_column(Text)
     task_id: Mapped[str | None] = mapped_column(String(64))  # Celery AsyncResult id
     # Current pipeline stage while status=processing. One of: normalizing,
-    # transcribing, diarizing, summarizing, finalizing. Null otherwise.
+    # transcribing, diarizing, summarizing, verifying, finalizing. Null otherwise.
     progress_step: Mapped[str | None] = mapped_column(String(32))
     # User-supplied overrides for pyannote's anonymous SPEAKER_NN labels.
     # Shape: {"SPEAKER_00": "Sarah", "SPEAKER_01": "James"}. Per-meeting —
@@ -173,6 +173,9 @@ class ActionItem(Base):
     # 0.0–1.0 LLM-assessed confidence that this item is a real commitment.
     # Gates auto-push to Calendar/Slack; items below threshold go to review.
     confidence: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    # Verification pass result. Null = not checked (high confidence, skipped).
+    # True = confirmed by second LLM pass. False = flagged as hallucinated.
+    verified: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -200,5 +203,6 @@ class CalendarEvent(Base):
         JSON, default=list, nullable=False
     )
     confidence: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    verified: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     meeting: Mapped[Meeting] = relationship(back_populates="calendar_events")

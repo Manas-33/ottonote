@@ -16,7 +16,12 @@ from app.diarization import diarize_file
 from app.merge import assign_speakers
 from app.models import ActionItem, CalendarEvent, Meeting, Segment, Summary
 from app.storage import download_audio_to_tmp
-from app.summarize import TranscriptSegment, summarize_segments
+from app.summarize import (
+    CONFIDENCE_THRESHOLD,
+    TranscriptSegment,
+    summarize_segments,
+    verify_notes,
+)
 from app.transcription import transcribe_file
 
 
@@ -99,14 +104,17 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
 
                     meeting.progress_step = "summarizing"
                     await db.commit()
-                    notes = await summarize_segments(
-                        [
-                            TranscriptSegment(
-                                start=s.start, end=s.end, text=s.text, speaker=s.speaker
-                            )
-                            for s in labeled
-                        ]
-                    )
+                    transcript_segments = [
+                        TranscriptSegment(
+                            start=s.start, end=s.end, text=s.text, speaker=s.speaker
+                        )
+                        for s in labeled
+                    ]
+                    notes = await summarize_segments(transcript_segments)
+
+                    meeting.progress_step = "verifying"
+                    await db.commit()
+                    verdicts = await verify_notes(transcript_segments, notes)
                 except Exception as e:
                     meeting.status = "failed"
                     meeting.progress_step = None
@@ -142,19 +150,31 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                     )
                 )
 
+            decisions_out = []
+            for i, d in enumerate(notes.decisions):
+                obj = d.model_dump()
+                key = f"decision_{i}"
+                if d.confidence < CONFIDENCE_THRESHOLD:
+                    obj["verified"] = verdicts.get(key)
+                decisions_out.append(obj)
+
             db.add(
                 Summary(
                     meeting_id=meeting.id,
                     tldr=notes.tldr,
                     summary=notes.summary,
-                    # Decisions are stored as JSON objects:
-                    # [{text, source_segment_indices}, ...]
-                    decisions=[d.model_dump() for d in notes.decisions],
+                    decisions=decisions_out,
                     keywords=notes.keywords_by_category,
                     follow_ups=notes.follow_ups,
                 )
             )
-            for item in notes.action_items:
+            for i, item in enumerate(notes.action_items):
+                key = f"action_{i}"
+                verified = (
+                    verdicts.get(key)
+                    if item.confidence < CONFIDENCE_THRESHOLD
+                    else None
+                )
                 db.add(
                     ActionItem(
                         meeting_id=meeting.id,
@@ -164,9 +184,16 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                         speaker_label=item.speaker_label,
                         source_segment_indices=item.source_segment_indices,
                         confidence=item.confidence,
+                        verified=verified,
                     )
                 )
-            for ev in notes.calendar_events:
+            for i, ev in enumerate(notes.calendar_events):
+                key = f"event_{i}"
+                verified = (
+                    verdicts.get(key)
+                    if ev.confidence < CONFIDENCE_THRESHOLD
+                    else None
+                )
                 db.add(
                     CalendarEvent(
                         meeting_id=meeting.id,
@@ -175,6 +202,7 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                         description=ev.description,
                         source_segment_indices=ev.source_segment_indices,
                         confidence=ev.confidence,
+                        verified=verified,
                     )
                 )
 

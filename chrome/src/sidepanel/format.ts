@@ -11,8 +11,9 @@ export const PROGRESS_INFO: Record<
 > = {
   normalizing: { pct: 10, label: "Preparing audio" },
   transcribing: { pct: 35, label: "Transcribing" },
-  diarizing: { pct: 70, label: "Diarizing speakers" },
-  summarizing: { pct: 90, label: "Summarizing" },
+  diarizing: { pct: 65, label: "Diarizing speakers" },
+  summarizing: { pct: 82, label: "Summarizing" },
+  verifying: { pct: 93, label: "Verifying" },
   finalizing: { pct: 98, label: "Finalizing" },
 };
 

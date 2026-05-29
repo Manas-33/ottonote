@@ -40,6 +40,7 @@ class DecisionOut(BaseModel):
     text: str
     source_segment_indices: list[int]
     confidence: float
+    verified: bool | None
 
 
 class SummaryOut(BaseModel):
@@ -59,6 +60,7 @@ class ActionItemOut(BaseModel):
     speaker_label: str | None
     source_segment_indices: list[int]
     confidence: float
+    verified: bool | None
 
 
 class CalendarEventOut(BaseModel):
@@ -68,6 +70,7 @@ class CalendarEventOut(BaseModel):
     description: str | None
     source_segment_indices: list[int]
     confidence: float
+    verified: bool | None
 
 
 class MeetingSummaryRow(BaseModel):
@@ -119,13 +122,14 @@ def _decisions_out(raw: list | None) -> list[DecisionOut]:
     out: list[DecisionOut] = []
     for d in raw or []:
         if isinstance(d, str):
-            out.append(DecisionOut(text=d, source_segment_indices=[], confidence=1.0))
+            out.append(DecisionOut(text=d, source_segment_indices=[], confidence=1.0, verified=None))
         elif isinstance(d, dict):
             out.append(
                 DecisionOut(
                     text=d.get("text", ""),
                     source_segment_indices=list(d.get("source_segment_indices") or []),
                     confidence=float(d.get("confidence", 1.0)),
+                    verified=d.get("verified"),
                 )
             )
     return out
@@ -175,6 +179,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
                 speaker_label=a.speaker_label,
                 source_segment_indices=list(a.source_segment_indices or []),
                 confidence=a.confidence,
+                verified=a.verified,
             )
             for a in m.action_items
         ],
@@ -186,6 +191,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
                 description=c.description,
                 source_segment_indices=list(c.source_segment_indices or []),
                 confidence=c.confidence,
+                verified=c.verified,
             )
             for c in m.calendar_events
         ],
@@ -529,4 +535,5 @@ async def update_action_item(
         speaker_label=item.speaker_label,
         source_segment_indices=list(item.source_segment_indices or []),
         confidence=item.confidence,
+        verified=item.verified,
     )

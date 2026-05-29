@@ -14,6 +14,7 @@ export type ProgressStep =
   | "transcribing"
   | "diarizing"
   | "summarizing"
+  | "verifying"
   | "finalizing";
 
 export type Segment = {
@@ -30,6 +31,8 @@ export type Decision = {
   // cite a specific passage — UI hides the "show source" affordance.
   source_segment_indices: number[];
   confidence: number;
+  // Null = not checked (high confidence). true = verified. false = flagged.
+  verified: boolean | null;
 };
 
 export type Summary = {
@@ -54,6 +57,7 @@ export type ActionItem = {
   speaker_label: string | null;
   source_segment_indices: number[];
   confidence: number;
+  verified: boolean | null;
 };
 
 export type CalendarEvent = {
@@ -63,6 +67,7 @@ export type CalendarEvent = {
   description: string | null;
   source_segment_indices: number[];
   confidence: number;
+  verified: boolean | null;
 };
 
 export type Meeting = {

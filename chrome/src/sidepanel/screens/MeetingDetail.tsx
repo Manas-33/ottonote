@@ -592,7 +592,7 @@ function DoneBody({
                             onClick={jumpToSource}
                           />
                         )}
-                        <ConfidenceBadge confidence={d.confidence} />
+                        <ConfidenceBadge confidence={d.confidence} verified={d.verified} />
                       </div>
                     </div>
                   </li>
@@ -881,12 +881,45 @@ function Section({
   );
 }
 
-// ---------- Confidence badge ----------
-// Subtle indicator for items where the LLM is less than fully confident.
-// High confidence (>= 0.8) shows nothing — silence means trust. Below that,
-// a small pill appears so the user knows to double-check.
-function ConfidenceBadge({ confidence }: { confidence: number }) {
+// ---------- Confidence / verification badge ----------
+// Shows nothing for high-confidence items. For items below 80% confidence,
+// displays a pill whose appearance depends on verification status:
+//   verified=true  → green "Verified"  (was uncertain, but confirmed)
+//   verified=false → red "Flagged"     (uncertain and could not confirm)
+//   verified=null  → amber/red %       (not yet checked — legacy data)
+function ConfidenceBadge({
+  confidence,
+  verified,
+}: {
+  confidence: number;
+  verified?: boolean | null;
+}) {
   if (confidence >= 0.8) return null;
+
+  if (verified === true) {
+    return (
+      <span
+        title={`${Math.round(confidence * 100)}% confidence — verified against transcript`}
+        className="inline-flex items-center gap-0.5 px-1.5 h-[18px] rounded-md font-mono text-[9.5px] tabular-nums uppercase tracking-[0.08em] text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40"
+      >
+        <Icon name="check" size={9} />
+        Verified
+      </span>
+    );
+  }
+
+  if (verified === false) {
+    return (
+      <span
+        title={`${Math.round(confidence * 100)}% confidence — not supported by transcript`}
+        className="inline-flex items-center gap-0.5 px-1.5 h-[18px] rounded-md font-mono text-[9.5px] tabular-nums uppercase tracking-[0.08em] text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/40"
+      >
+        <Icon name="alert-triangle" size={9} />
+        Flagged
+      </span>
+    );
+  }
+
   const low = confidence < 0.5;
   return (
     <span
@@ -1008,7 +1041,7 @@ function ActionRow({
                 {item.due_date}
               </span>
             )}
-            <ConfidenceBadge confidence={item.confidence} />
+            <ConfidenceBadge confidence={item.confidence} verified={item.verified} />
           </div>
           {item.source_segment_indices.length > 0 && (
             <SourceLink

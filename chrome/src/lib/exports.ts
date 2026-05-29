@@ -38,7 +38,7 @@ export function toMarkdown(meeting: Meeting): string {
   if (meeting.summary && meeting.summary.decisions.length > 0) {
     lines.push("## Decisions");
     lines.push("");
-    for (const d of meeting.summary.decisions) lines.push(`- ${d}`);
+    for (const d of meeting.summary.decisions) lines.push(`- ${d.text}`);
     lines.push("");
   }
 
@@ -119,7 +119,7 @@ export function toPrintableHtml(meeting: Meeting): string {
   const decisions =
     meeting.summary && meeting.summary.decisions.length > 0
       ? `<section><h2>Decisions</h2><ul>${meeting.summary.decisions
-          .map((d) => `<li>${escapeHtml(d)}</li>`)
+          .map((d) => `<li>${escapeHtml(d.text)}</li>`)
           .join("")}</ul></section>`
       : "";
 

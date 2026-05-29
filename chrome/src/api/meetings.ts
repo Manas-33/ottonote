@@ -24,12 +24,19 @@ export type Segment = {
   text: string;
 };
 
+export type Decision = {
+  text: string;
+  // Segment.idx values that support this decision. Empty if the LLM did not
+  // cite a specific passage — UI hides the "show source" affordance.
+  source_segment_indices: number[];
+};
+
 export type Summary = {
   // One-sentence headline with inline <mark>...</mark> tags. Null on
   // pre-tldr meetings; the frontend hides the pull-quote in that case.
   tldr: string | null;
   summary: string;
-  decisions: string[];
+  decisions: Decision[];
   keywords: Record<string, string[]>;
   follow_ups: string[];
 };
@@ -40,6 +47,7 @@ export type ActionItem = {
   task: string;
   due_date: string | null;
   status: string;
+  source_segment_indices: number[];
 };
 
 export type CalendarEvent = {
@@ -47,6 +55,7 @@ export type CalendarEvent = {
   title: string;
   when_text: string;
   description: string | null;
+  source_segment_indices: number[];
 };
 
 export type Meeting = {

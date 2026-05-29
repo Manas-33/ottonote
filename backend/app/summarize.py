@@ -29,16 +29,28 @@ class TranscriptSegment(BaseModel):
     speaker: str | None = None
 
 
+# Source-segment anchors let the UI jump from an extracted item back to the
+# transcript passages that support it. The LLM is asked to cite segments by
+# their integer `idx`, which is stable (segments are inserted with a known
+# index per meeting). Empty list = LLM could not (or did not) cite — UI hides
+# the "show source" affordance in that case.
 class ActionItem(BaseModel):
     assignee: str = Field(description="Who is responsible, or 'Unknown' if unclear")
     task: str
     due_date: str | None = Field(default=None, description="ISO date or natural-language phrase")
+    source_segment_indices: list[int] = Field(default_factory=list)
 
 
 class CalendarEvent(BaseModel):
     title: str
     datetime: str = Field(description="Natural-language datetime, e.g. 'next Friday at 2pm'")
     description: str | None = None
+    source_segment_indices: list[int] = Field(default_factory=list)
+
+
+class Decision(BaseModel):
+    text: str
+    source_segment_indices: list[int] = Field(default_factory=list)
 
 
 class MeetingNotes(BaseModel):
@@ -50,7 +62,7 @@ class MeetingNotes(BaseModel):
         )
     )
     summary: str = Field(description="2-4 sentences covering the main discussion")
-    decisions: list[str] = Field(default_factory=list)
+    decisions: list[Decision] = Field(default_factory=list)
     action_items: list[ActionItem] = Field(default_factory=list)
     keywords_by_category: dict[str, list[str]] = Field(default_factory=dict)
     calendar_events: list[CalendarEvent] = Field(default_factory=list)
@@ -82,8 +94,24 @@ _RECORD_NOTES_TOOL = {
             },
             "decisions": {
                 "type": "array",
-                "items": {"type": "string"},
                 "description": "Clear decisions reached during the meeting.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "source_segment_indices": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "description": (
+                                "Indices of transcript segments (the [#N] "
+                                "markers in the transcript) that support this "
+                                "decision. Cite 1-3 segments. Empty only if no "
+                                "specific passage supports it."
+                            ),
+                        },
+                    },
+                    "required": ["text", "source_segment_indices"],
+                },
             },
             "action_items": {
                 "type": "array",
@@ -93,8 +121,18 @@ _RECORD_NOTES_TOOL = {
                         "assignee": {"type": "string"},
                         "task": {"type": "string"},
                         "due_date": {"type": "string"},
+                        "source_segment_indices": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "description": (
+                                "Indices of transcript segments (the [#N] "
+                                "markers in the transcript) where the commitment "
+                                "was made. Cite 1-3 segments. Empty only if you "
+                                "cannot point to a specific passage."
+                            ),
+                        },
                     },
-                    "required": ["assignee", "task"],
+                    "required": ["assignee", "task", "source_segment_indices"],
                 },
             },
             "keywords_by_category": {
@@ -116,8 +154,18 @@ _RECORD_NOTES_TOOL = {
                         "title": {"type": "string"},
                         "datetime": {"type": "string"},
                         "description": {"type": "string"},
+                        "source_segment_indices": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "description": (
+                                "Indices of transcript segments (the [#N] "
+                                "markers in the transcript) that proposed this "
+                                "event. Cite 1-3 segments. Empty only if you "
+                                "cannot point to a specific passage."
+                            ),
+                        },
                     },
-                    "required": ["title", "datetime"],
+                    "required": ["title", "datetime", "source_segment_indices"],
                 },
             },
             "follow_ups": {
@@ -139,21 +187,30 @@ _RECORD_NOTES_TOOL = {
 
 _SYSTEM_PROMPT = (
     "You are an assistant that extracts structured notes from meeting transcripts. "
-    "The transcript has speaker labels (SPEAKER_00, SPEAKER_01, ...) and timestamps. "
+    "Each transcript line is prefixed with a segment index in the form [#N], "
+    "followed by a timestamp and speaker label (SPEAKER_00, SPEAKER_01, ...). "
     "Treat each speaker as a distinct participant. When assigning action items, use "
     "the speaker label if no real name is mentioned. Be concise and factual — do not "
     "invent details not present in the transcript. "
+    "For every decision, action item, and calendar event, cite the supporting "
+    "segment indices via `source_segment_indices`. Prefer 1-3 indices that most "
+    "directly support the item. Use the integer N from the [#N] marker. "
     "Always respond by calling the record_meeting_notes tool."
 )
 
 
 def _format_transcript(segments: list[TranscriptSegment]) -> str:
-    """Render segments as a readable transcript for the LLM."""
+    """Render segments as a readable transcript for the LLM.
+
+    The `[#N]` prefix is the segment index the LLM cites back via
+    `source_segment_indices`. N matches the `idx` we'll later persist in the
+    `segments` table — they're assigned 1:1 from `enumerate(segments)`.
+    """
     lines = []
-    for seg in segments:
+    for idx, seg in enumerate(segments):
         mm, ss = divmod(int(seg.start), 60)
         speaker = seg.speaker or "UNKNOWN"
-        lines.append(f"[{mm:02d}:{ss:02d}] {speaker}: {seg.text}")
+        lines.append(f"[#{idx:03d}] [{mm:02d}:{ss:02d}] {speaker}: {seg.text}")
     return "\n".join(lines)
 
 

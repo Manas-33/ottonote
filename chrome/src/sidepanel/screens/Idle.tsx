@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  createMeeting,
   listMeetings,
+  processMeeting,
   type MeetingStatus,
   type MeetingSummaryRow,
 } from "../../api/meetings";
@@ -39,6 +41,15 @@ export function Idle({
   // path Chrome did NOT grant activeTab, so tabCapture will fail until they
   // click the toolbar icon. Cleared by the background on action.onClicked.
   const [needsToolbarClick, setNeedsToolbarClick] = useState(false);
+
+  // Upload-audio flow state. We don't go through the chrome.storage snapshot
+  // (that path is for live tab-capture); instead we drive the API directly
+  // and route into MeetingDetail on success — its existing poller handles
+  // the rest of the lifecycle.
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadState, setUploadState] = useState<
+    { kind: "idle" } | { kind: "uploading" } | { kind: "error"; msg: string }
+  >({ kind: "idle" });
 
   const {
     workspaces,
@@ -91,6 +102,33 @@ export function Idle({
 
   const groups = useMemo<Group[]>(() => groupByRecency(rows ?? []), [rows]);
   const total = rows?.length ?? 0;
+
+  const handleUploadClick = () => {
+    if (uploadState.kind === "uploading") return;
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset the input so picking the same file twice still triggers onChange.
+    e.target.value = "";
+    if (!file) return;
+    setUploadState({ kind: "uploading" });
+    try {
+      const meeting = await createMeeting(
+        file.name.replace(/\.[^.]+$/, ""),
+        selectedWorkspaceId ?? null
+      );
+      await processMeeting(meeting.id, file, file.name);
+      setUploadState({ kind: "idle" });
+      onOpenMeeting(meeting.id);
+    } catch (err) {
+      setUploadState({
+        kind: "error",
+        msg: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
 
   const now = new Date();
 
@@ -157,6 +195,44 @@ export function Idle({
             <Icon name="arrow-right" size={16} className="opacity-40" />
           </div>
         </button>
+      </div>
+
+      {/* Upload audio (secondary). Hidden input is triggered programmatically. */}
+      <div className="px-5 mt-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="audio/*"
+          className="hidden"
+          onChange={handleFileChosen}
+        />
+        <button
+          type="button"
+          onClick={handleUploadClick}
+          disabled={uploadState.kind === "uploading"}
+          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl border border-paper-200 dark:border-paper-800 bg-paper-100/60 dark:bg-paper-900/40 hover:bg-paper-100 dark:hover:bg-paper-900 disabled:opacity-60 disabled:cursor-progress transition-colors"
+        >
+          <span className="w-8 h-8 rounded-full bg-paper-200/60 dark:bg-paper-800/60 flex items-center justify-center shrink-0 text-paper-700 dark:text-paper-200">
+            <Icon name="upload" size={13} />
+          </span>
+          <span className="flex-1 min-w-0 text-left">
+            <span className="block text-[13px] font-medium tracking-[-0.005em] text-paper-900 dark:text-paper-50">
+              {uploadState.kind === "uploading"
+                ? "Uploading…"
+                : "Upload audio"}
+            </span>
+            <span className="block text-[10px] mt-0.5 font-mono uppercase tracking-[0.12em] text-paper-500 dark:text-paper-400">
+              {uploadState.kind === "uploading"
+                ? "Sending to backend"
+                : "Process an existing file"}
+            </span>
+          </span>
+        </button>
+        {uploadState.kind === "error" && (
+          <p className="mt-2 text-[11.5px] text-red-600 dark:text-red-400 leading-snug">
+            Upload failed: {uploadState.msg}
+          </p>
+        )}
       </div>
 
       {/* Library header */}

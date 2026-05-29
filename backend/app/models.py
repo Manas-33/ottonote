@@ -158,6 +158,11 @@ class ActionItem(Base):
     due_date: Mapped[str | None] = mapped_column(String(100))  # free text for now
     status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
     # open | done
+    # Segment.idx values that support this item — used by the "show source"
+    # affordance in the UI. Empty if the LLM couldn't cite a passage.
+    source_segment_indices: Mapped[list] = mapped_column(
+        JSON, default=list, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -180,5 +185,9 @@ class CalendarEvent(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     when_text: Mapped[str] = mapped_column(String(200), nullable=False)  # natural language
     description: Mapped[str | None] = mapped_column(Text)
+    # Segment.idx values that support this event — see ActionItem.
+    source_segment_indices: Mapped[list] = mapped_column(
+        JSON, default=list, nullable=False
+    )
 
     meeting: Mapped[Meeting] = relationship(back_populates="calendar_events")

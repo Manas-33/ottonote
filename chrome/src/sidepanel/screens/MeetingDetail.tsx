@@ -421,6 +421,32 @@ function DoneBody({
   const toggle = (k: keyof typeof open) =>
     setOpen((o) => ({ ...o, [k]: !o[k] }));
 
+  // Segments currently flashing because the user clicked a "show source" link.
+  // Cleared on a timer so the highlight reads as a momentary pulse, not a
+  // sticky selection.
+  const [highlighted, setHighlighted] = useState<Set<number>>(new Set());
+  const highlightTimer = useRef<number | null>(null);
+
+  const jumpToSource = (indices: number[]) => {
+    if (indices.length === 0) return;
+    setOpen((o) => ({ ...o, transcript: true }));
+    setHighlighted(new Set(indices));
+    if (highlightTimer.current != null) {
+      window.clearTimeout(highlightTimer.current);
+    }
+    highlightTimer.current = window.setTimeout(
+      () => setHighlighted(new Set()),
+      2200
+    );
+    // Wait a frame so the transcript section has actually rendered before we
+    // try to scroll into it.
+    requestAnimationFrame(() => {
+      const first = Math.min(...indices);
+      const el = document.getElementById(`seg-${first}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  };
+
   if (meeting.status === "processing" || meeting.status === "pending") {
     return (
       <p className="mt-10 text-center text-[12.5px] text-paper-500 dark:text-paper-400 px-6">
@@ -525,9 +551,17 @@ function DoneBody({
                     <span className="font-mono text-[10px] tabular-nums text-flame-600 dark:text-flame-400 pt-[3px] w-8 shrink-0 font-medium">
                       D.{String(i + 1).padStart(2, "0")}
                     </span>
-                    <span className="text-[13px] text-paper-800 dark:text-paper-100 leading-[1.55]">
-                      {d}
-                    </span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[13px] text-paper-800 dark:text-paper-100 leading-[1.55]">
+                        {d.text}
+                      </span>
+                      {d.source_segment_indices.length > 0 && (
+                        <SourceLink
+                          indices={d.source_segment_indices}
+                          onClick={jumpToSource}
+                        />
+                      )}
+                    </div>
                   </li>
                 ))}
               </ol>
@@ -644,6 +678,7 @@ function DoneBody({
                     onToggle={() =>
                       onActionToggle(a, a.status === "done" ? "open" : "done")
                     }
+                    onShowSource={jumpToSource}
                   />
                 ))}
               </ul>
@@ -662,6 +697,7 @@ function DoneBody({
                     onToggle={() =>
                       onActionToggle(a, a.status === "done" ? "open" : "done")
                     }
+                    onShowSource={jumpToSource}
                   />
                 ))}
               </ul>
@@ -684,6 +720,7 @@ function DoneBody({
             segments={meeting.segments}
             speakers={speakers}
             onPlay={seekTo}
+            highlighted={highlighted}
           />
         </Section>
       )}
@@ -797,13 +834,42 @@ function Section({
   );
 }
 
+// ---------- Source link ----------
+// Small affordance that appears under an extracted item when the LLM cited
+// supporting transcript segments. Clicking opens the transcript section and
+// flashes the cited segments.
+function SourceLink({
+  indices,
+  onClick,
+}: {
+  indices: number[];
+  onClick: (indices: number[]) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(indices);
+      }}
+      title={`From transcript segment${indices.length === 1 ? "" : "s"} ${indices.join(", ")}`}
+      className="mt-1 inline-flex items-center gap-1 font-mono text-[9.5px] uppercase tracking-[0.12em] text-paper-500 dark:text-paper-400 hover:text-flame-600 dark:hover:text-flame-400 transition-colors"
+    >
+      <Icon name="corner-down-right" size={9} />
+      Source
+    </button>
+  );
+}
+
 // ---------- Action row ----------
 function ActionRow({
   item,
   onToggle,
+  onShowSource,
 }: {
   item: ActionItem;
   onToggle: () => void;
+  onShowSource: (indices: number[]) => void;
 }) {
   const done = item.status === "done";
   return (
@@ -856,6 +922,12 @@ function ActionRow({
               </span>
             )}
           </div>
+          {item.source_segment_indices.length > 0 && (
+            <SourceLink
+              indices={item.source_segment_indices}
+              onClick={onShowSource}
+            />
+          )}
         </div>
       </div>
     </li>
@@ -867,10 +939,12 @@ function TranscriptBody({
   segments,
   speakers,
   onPlay,
+  highlighted,
 }: {
   segments: Segment[];
   speakers: Map<string | null, SpeakerStyle>;
   onPlay: (sec: number) => void;
+  highlighted: Set<number>;
 }) {
   const [findOpen, setFindOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -967,6 +1041,7 @@ function TranscriptBody({
               style={speakers.get(s.speaker) ?? SPEAKER_PALETTE[0]}
               onPlay={() => onPlay(s.start_sec)}
               highlight={trimmed}
+              flashed={highlighted.has(s.idx)}
             />
           ))
         )}
@@ -981,14 +1056,25 @@ function TranscriptRow({
   style,
   onPlay,
   highlight,
+  flashed,
 }: {
   segment: Segment;
   style: SpeakerStyle;
   onPlay: () => void;
   highlight?: string;
+  // True when a "show source" click is targeting this segment. Drives a
+  // momentary ring + tinted background that fades away on a parent timer.
+  flashed?: boolean;
 }) {
   return (
-    <div className="group flex gap-3 -mx-2 px-2 py-1.5 rounded-md hover:bg-paper-100/60 dark:hover:bg-paper-900/40 relative">
+    <div
+      id={`seg-${segment.idx}`}
+      className={`group flex gap-3 -mx-2 px-2 py-1.5 rounded-md hover:bg-paper-100/60 dark:hover:bg-paper-900/40 relative transition-colors duration-300 ${
+        flashed
+          ? "bg-flame-100 dark:bg-flame-900/30 ring-1 ring-flame-400/60 dark:ring-flame-500/40"
+          : ""
+      }`}
+    >
       <div className="font-mono tabular-nums text-[10px] text-paper-400 dark:text-paper-500 pt-[3px] w-9 shrink-0">
         {formatDuration(segment.start_sec)}
       </div>

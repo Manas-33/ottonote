@@ -147,7 +147,9 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                     meeting_id=meeting.id,
                     tldr=notes.tldr,
                     summary=notes.summary,
-                    decisions=notes.decisions,
+                    # Decisions are stored as JSON objects:
+                    # [{text, source_segment_indices}, ...]
+                    decisions=[d.model_dump() for d in notes.decisions],
                     keywords=notes.keywords_by_category,
                     follow_ups=notes.follow_ups,
                 )
@@ -159,6 +161,7 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                         assignee=item.assignee,
                         task=item.task,
                         due_date=item.due_date,
+                        source_segment_indices=item.source_segment_indices,
                     )
                 )
             for ev in notes.calendar_events:
@@ -168,6 +171,7 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                         title=ev.title,
                         when_text=ev.datetime,
                         description=ev.description,
+                        source_segment_indices=ev.source_segment_indices,
                     )
                 )
 

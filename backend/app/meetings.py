@@ -36,10 +36,15 @@ class SegmentOut(BaseModel):
     text: str
 
 
+class DecisionOut(BaseModel):
+    text: str
+    source_segment_indices: list[int]
+
+
 class SummaryOut(BaseModel):
     tldr: str | None
     summary: str
-    decisions: list[str]
+    decisions: list[DecisionOut]
     keywords: dict[str, list[str]]
     follow_ups: list[str]
 
@@ -50,6 +55,7 @@ class ActionItemOut(BaseModel):
     task: str
     due_date: str | None
     status: str
+    source_segment_indices: list[int]
 
 
 class CalendarEventOut(BaseModel):
@@ -57,6 +63,7 @@ class CalendarEventOut(BaseModel):
     title: str
     when_text: str
     description: str | None
+    source_segment_indices: list[int]
 
 
 class MeetingSummaryRow(BaseModel):
@@ -91,6 +98,28 @@ class MeetingDetail(BaseModel):
     calendar_events: list[CalendarEventOut]
 
 
+def _decisions_out(raw: list | None) -> list[DecisionOut]:
+    """Normalize stored decisions to the new shape.
+
+    Legacy rows are `["string", ...]`; new rows are
+    `[{text, source_segment_indices}, ...]`. The Alembic migration upgrades
+    rows in place, but tolerate both shapes here so an unmigrated read doesn't
+    500. Defensive against rows mid-migration.
+    """
+    out: list[DecisionOut] = []
+    for d in raw or []:
+        if isinstance(d, str):
+            out.append(DecisionOut(text=d, source_segment_indices=[]))
+        elif isinstance(d, dict):
+            out.append(
+                DecisionOut(
+                    text=d.get("text", ""),
+                    source_segment_indices=list(d.get("source_segment_indices") or []),
+                )
+            )
+    return out
+
+
 def _to_detail(m: Meeting) -> MeetingDetail:
     return MeetingDetail(
         id=m.id,
@@ -118,7 +147,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
             SummaryOut(
                 tldr=m.summary.tldr,
                 summary=m.summary.summary,
-                decisions=list(m.summary.decisions or []),
+                decisions=_decisions_out(m.summary.decisions),
                 keywords=dict(m.summary.keywords or {}),
                 follow_ups=list(m.summary.follow_ups or []),
             )
@@ -132,6 +161,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
                 task=a.task,
                 due_date=a.due_date,
                 status=a.status,
+                source_segment_indices=list(a.source_segment_indices or []),
             )
             for a in m.action_items
         ],
@@ -141,6 +171,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
                 title=c.title,
                 when_text=c.when_text,
                 description=c.description,
+                source_segment_indices=list(c.source_segment_indices or []),
             )
             for c in m.calendar_events
         ],
@@ -468,4 +499,5 @@ async def update_action_item(
         task=item.task,
         due_date=item.due_date,
         status=item.status,
+        source_segment_indices=list(item.source_segment_indices or []),
     )

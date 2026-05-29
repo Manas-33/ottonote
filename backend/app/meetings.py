@@ -39,6 +39,7 @@ class SegmentOut(BaseModel):
 class DecisionOut(BaseModel):
     text: str
     source_segment_indices: list[int]
+    confidence: float
 
 
 class SummaryOut(BaseModel):
@@ -57,6 +58,7 @@ class ActionItemOut(BaseModel):
     status: str
     speaker_label: str | None
     source_segment_indices: list[int]
+    confidence: float
 
 
 class CalendarEventOut(BaseModel):
@@ -65,6 +67,7 @@ class CalendarEventOut(BaseModel):
     when_text: str
     description: str | None
     source_segment_indices: list[int]
+    confidence: float
 
 
 class MeetingSummaryRow(BaseModel):
@@ -103,22 +106,26 @@ class MeetingDetail(BaseModel):
 
 
 def _decisions_out(raw: list | None) -> list[DecisionOut]:
-    """Normalize stored decisions to the new shape.
+    """Normalize stored decisions to the current shape.
 
-    Legacy rows are `["string", ...]`; new rows are
-    `[{text, source_segment_indices}, ...]`. The Alembic migration upgrades
-    rows in place, but tolerate both shapes here so an unmigrated read doesn't
-    500. Defensive against rows mid-migration.
+    Legacy shapes:
+      - `["string", ...]`  (oldest)
+      - `[{text, source_segment_indices}, ...]`  (pre-confidence)
+      - `[{text, source_segment_indices, confidence}, ...]`  (current)
+
+    The Alembic migrations upgrade rows in place, but tolerate all shapes here
+    so an unmigrated read doesn't 500.
     """
     out: list[DecisionOut] = []
     for d in raw or []:
         if isinstance(d, str):
-            out.append(DecisionOut(text=d, source_segment_indices=[]))
+            out.append(DecisionOut(text=d, source_segment_indices=[], confidence=1.0))
         elif isinstance(d, dict):
             out.append(
                 DecisionOut(
                     text=d.get("text", ""),
                     source_segment_indices=list(d.get("source_segment_indices") or []),
+                    confidence=float(d.get("confidence", 1.0)),
                 )
             )
     return out
@@ -167,6 +174,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
                 status=a.status,
                 speaker_label=a.speaker_label,
                 source_segment_indices=list(a.source_segment_indices or []),
+                confidence=a.confidence,
             )
             for a in m.action_items
         ],
@@ -177,6 +185,7 @@ def _to_detail(m: Meeting) -> MeetingDetail:
                 when_text=c.when_text,
                 description=c.description,
                 source_segment_indices=list(c.source_segment_indices or []),
+                confidence=c.confidence,
             )
             for c in m.calendar_events
         ],
@@ -519,4 +528,5 @@ async def update_action_item(
         status=item.status,
         speaker_label=item.speaker_label,
         source_segment_indices=list(item.source_segment_indices or []),
+        confidence=item.confidence,
     )

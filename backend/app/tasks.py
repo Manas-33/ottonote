@@ -163,6 +163,7 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                         due_date=item.due_date,
                         speaker_label=item.speaker_label,
                         source_segment_indices=item.source_segment_indices,
+                        confidence=item.confidence,
                     )
                 )
             for ev in notes.calendar_events:
@@ -173,6 +174,7 @@ async def _run_pipeline(meeting_id: uuid.UUID) -> None:
                         when_text=ev.datetime,
                         description=ev.description,
                         source_segment_indices=ev.source_segment_indices,
+                        confidence=ev.confidence,
                     )
                 )
 

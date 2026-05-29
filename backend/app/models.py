@@ -170,6 +170,9 @@ class ActionItem(Base):
     source_segment_indices: Mapped[list] = mapped_column(
         JSON, default=list, nullable=False
     )
+    # 0.0–1.0 LLM-assessed confidence that this item is a real commitment.
+    # Gates auto-push to Calendar/Slack; items below threshold go to review.
+    confidence: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -196,5 +199,6 @@ class CalendarEvent(Base):
     source_segment_indices: Mapped[list] = mapped_column(
         JSON, default=list, nullable=False
     )
+    confidence: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
 
     meeting: Mapped[Meeting] = relationship(back_populates="calendar_events")

@@ -43,6 +43,10 @@ class ActionItem(BaseModel):
     # `assignee` (e.g. "James, can you follow up?" — voiced by SPEAKER_00,
     # assigned to James). Null if the LLM cannot attribute it.
     speaker_label: str | None = Field(default=None)
+    confidence: float = Field(
+        default=1.0, ge=0.0, le=1.0,
+        description="0.0–1.0 confidence that this action item is real and accurate",
+    )
 
 
 class CalendarEvent(BaseModel):
@@ -50,11 +54,19 @@ class CalendarEvent(BaseModel):
     datetime: str = Field(description="Natural-language datetime, e.g. 'next Friday at 2pm'")
     description: str | None = None
     source_segment_indices: list[int] = Field(default_factory=list)
+    confidence: float = Field(
+        default=1.0, ge=0.0, le=1.0,
+        description="0.0–1.0 confidence that this event is real and accurate",
+    )
 
 
 class Decision(BaseModel):
     text: str
     source_segment_indices: list[int] = Field(default_factory=list)
+    confidence: float = Field(
+        default=1.0, ge=0.0, le=1.0,
+        description="0.0–1.0 confidence that this decision was actually made",
+    )
 
 
 class MeetingNotes(BaseModel):
@@ -113,8 +125,17 @@ _RECORD_NOTES_TOOL = {
                                 "specific passage supports it."
                             ),
                         },
+                        "confidence": {
+                            "type": "number",
+                            "description": (
+                                "0.0–1.0 confidence that this decision was "
+                                "actually agreed upon in the meeting. 1.0 = "
+                                "explicitly stated; lower values for implied "
+                                "or ambiguous decisions."
+                            ),
+                        },
                     },
-                    "required": ["text", "source_segment_indices"],
+                    "required": ["text", "source_segment_indices", "confidence"],
                 },
             },
             "action_items": {
@@ -146,8 +167,16 @@ _RECORD_NOTES_TOOL = {
                                 "speaker truly cannot be determined."
                             ),
                         },
+                        "confidence": {
+                            "type": "number",
+                            "description": (
+                                "0.0–1.0 confidence that this action item is "
+                                "a real commitment. 1.0 = explicit 'I will' / "
+                                "'can you'; lower for vague or implied tasks."
+                            ),
+                        },
                     },
-                    "required": ["assignee", "task", "source_segment_indices"],
+                    "required": ["assignee", "task", "source_segment_indices", "confidence"],
                 },
             },
             "keywords_by_category": {
@@ -179,8 +208,16 @@ _RECORD_NOTES_TOOL = {
                                 "cannot point to a specific passage."
                             ),
                         },
+                        "confidence": {
+                            "type": "number",
+                            "description": (
+                                "0.0–1.0 confidence that this event was "
+                                "actually scheduled. 1.0 = explicit date/time "
+                                "agreed; lower for tentative or vague mentions."
+                            ),
+                        },
                     },
-                    "required": ["title", "datetime", "source_segment_indices"],
+                    "required": ["title", "datetime", "source_segment_indices", "confidence"],
                 },
             },
             "follow_ups": {
@@ -215,6 +252,11 @@ _SYSTEM_PROMPT = (
     "This may differ from `assignee` when someone assigns work to another person "
     "(e.g. 'James, can you handle X?' → assignee=James, speaker_label=whoever was "
     "speaking). Omit only when no speaker can be reasonably attributed. "
+    "For every decision, action item, and calendar event, set `confidence` to a "
+    "value between 0.0 and 1.0 indicating how certain you are the item is real: "
+    "1.0 = explicitly stated and unambiguous; 0.7-0.9 = clearly implied but not "
+    "verbatim; 0.4-0.6 = tentative, hedged, or conditional; below 0.4 = speculative "
+    "or only loosely inferred. Be honest — do not inflate confidence. "
     "Always respond by calling the record_meeting_notes tool."
 )
 

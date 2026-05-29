@@ -585,12 +585,15 @@ function DoneBody({
                       <span className="text-[13px] text-paper-800 dark:text-paper-100 leading-[1.55]">
                         {d.text}
                       </span>
-                      {d.source_segment_indices.length > 0 && (
-                        <SourceLink
-                          indices={d.source_segment_indices}
-                          onClick={jumpToSource}
-                        />
-                      )}
+                      <div className="mt-1 flex items-center gap-1.5">
+                        {d.source_segment_indices.length > 0 && (
+                          <SourceLink
+                            indices={d.source_segment_indices}
+                            onClick={jumpToSource}
+                          />
+                        )}
+                        <ConfidenceBadge confidence={d.confidence} />
+                      </div>
                     </div>
                   </li>
                 ))}
@@ -878,6 +881,28 @@ function Section({
   );
 }
 
+// ---------- Confidence badge ----------
+// Subtle indicator for items where the LLM is less than fully confident.
+// High confidence (>= 0.8) shows nothing — silence means trust. Below that,
+// a small pill appears so the user knows to double-check.
+function ConfidenceBadge({ confidence }: { confidence: number }) {
+  if (confidence >= 0.8) return null;
+  const low = confidence < 0.5;
+  return (
+    <span
+      title={`${Math.round(confidence * 100)}% confidence`}
+      className={`inline-flex items-center gap-0.5 px-1.5 h-[18px] rounded-md font-mono text-[9.5px] tabular-nums uppercase tracking-[0.08em] ${
+        low
+          ? "text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/40"
+          : "text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40"
+      }`}
+    >
+      <Icon name="alert-triangle" size={9} />
+      {Math.round(confidence * 100)}%
+    </span>
+  );
+}
+
 // ---------- Source link ----------
 // Small affordance that appears under an extracted item when the LLM cited
 // supporting transcript segments. Clicking opens the transcript section and
@@ -983,6 +1008,7 @@ function ActionRow({
                 {item.due_date}
               </span>
             )}
+            <ConfidenceBadge confidence={item.confidence} />
           </div>
           {item.source_segment_indices.length > 0 && (
             <SourceLink

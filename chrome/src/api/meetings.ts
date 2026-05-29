@@ -29,6 +29,7 @@ export type Decision = {
   // Segment.idx values that support this decision. Empty if the LLM did not
   // cite a specific passage — UI hides the "show source" affordance.
   source_segment_indices: number[];
+  confidence: number;
 };
 
 export type Summary = {
@@ -52,6 +53,7 @@ export type ActionItem = {
   // speaker's transcript rows. Distinct from `assignee` (free-text name).
   speaker_label: string | null;
   source_segment_indices: number[];
+  confidence: number;
 };
 
 export type CalendarEvent = {
@@ -60,6 +62,7 @@ export type CalendarEvent = {
   when_text: string;
   description: string | null;
   source_segment_indices: number[];
+  confidence: number;
 };
 
 export type Meeting = {

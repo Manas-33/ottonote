@@ -8,22 +8,13 @@ It comes as a Chrome extension for calls in the browser (Google Meet, Zoom, Team
 
 ## Demo
 
-<table>
-  <tr>
-    <td align="center">
-      <a href="media/ottonote-chrome.mp4"><img src="media/ottonote-chrome.jpg" width="560" alt="OttoNote Chrome extension demo" /></a>
-    </td>
-    <td align="center">
-      <a href="media/ottonote-mobile.mp4"><img src="media/ottonote-mobile.jpg" width="178" alt="OttoNote mobile app demo" /></a>
-    </td>
-  </tr>
-  <tr>
-    <td align="center">Chrome extension</td>
-    <td align="center">Mobile app</td>
-  </tr>
-</table>
+**Chrome extension**
 
-Click a thumbnail to watch.
+https://github.com/user-attachments/assets/b1247a9f-562c-41a0-ad64-e24341c92e8d
+
+**Mobile app**
+
+https://github.com/user-attachments/assets/b66afbac-9634-47f2-b812-c520774f447c
 
 ## How it works
 

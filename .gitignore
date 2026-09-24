@@ -46,8 +46,13 @@ models/
 
 # Project docs (local only)
 CLAUDE.md
+AGENTS.md
 PROJECT.md
 TECHSTACK.md
 ottonote.md
 plan.md
 !mobile/lib/models/
+*.local.md
+
+# Brag video build output (final videos live in media/)
+brag-output*/

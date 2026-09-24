@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 522" width="960" height="522" role="img" aria-label="OttoNote pipeline">
+<style>
+    .frame { fill: #121211; stroke: #2a2a27; }
+    .bgfill { fill: #121211; }
+    .card { fill: #1a1a18; stroke: #34332f; stroke-width: 1.2; }
+    .claude { fill: #2b1a10; stroke: #80230d; stroke-width: 1.2; }
+    .gate { fill: #f2f1ea; }
+    .rule { stroke: #2a2a27; stroke-width: 1; }
+    .a { fill: none; stroke: #6e6d62; stroke-width: 1.5; }
+    .arrhead { fill: #6e6d62; }
+    .dot { fill: #ff6a2e; }
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    .t { font-size: 15px; font-weight: 600; fill: #f2f1ea; letter-spacing: -0.2px; }
+    .t2 { font-size: 14px; font-weight: 500; fill: #f2f1ea; }
+    .s { font-size: 12.5px; fill: #a3a193; }
+    .n { font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; fill: #ff6a2e; letter-spacing: 1px; }
+    .m { font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; font-weight: 500; fill: #a3a193; letter-spacing: 1.6px; }
+    .flame { fill: #ff6a2e; }
+    .halo { paint-order: stroke; stroke: #121211; stroke-width: 5px; stroke-linejoin: round; }
+    .gate-m { fill: #6e6d62; font-size: 9.5px; }
+    .gate-t { fill: #141413; }
+    .chip-ok { fill: #063d2e; }
+    .chip-bad { fill: #4c1414; }
+    .chip-id { fill: #1a1a18; stroke: #34332f; stroke-width: 1.2; }
+    .chip-ok-t, .chip-bad-t, .chip-id-t { font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 1.2px; }
+    .chip-ok-t { fill: #6ee7b7; }
+    .chip-bad-t { fill: #fca5a5; }
+    .chip-id-t { fill: #a3a193; }
+    </style>
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path class="arrhead" d="M0 1 L9 5 L0 9 Z"/>
+  </marker>
+</defs>
+<rect class="frame" x="0.5" y="0.5" width="959" height="521" rx="18"/>
+<text class="m flame" x="40" y="46">THE PIPELINE</text>
+<path class="rule" d="M152 42 H920"/>
+<rect class="card" x="40" y="72" width="176" height="120" rx="10"/>
+<text class="m" x="56" y="98">AUDIO IN</text>
+<circle class="dot" cx="60" cy="121" r="3"/>
+<text class="t2" x="72" y="126">Chrome tab</text>
+<circle class="dot" cx="60" cy="145" r="3"/>
+<text class="t2" x="72" y="150">Phone mic</text>
+<circle class="dot" cx="60" cy="169" r="3"/>
+<text class="t2" x="72" y="174">Audio file</text>
+<rect class="card" x="262" y="104" width="150" height="56" rx="10"/>
+<text class="n" x="278" y="129">01</text>
+<text class="t" x="304" y="129">ffmpeg</text>
+<text class="s" x="278" y="148">16 kHz mono audio</text>
+<rect class="card" x="458" y="72" width="200" height="56" rx="10"/>
+<text class="n" x="474" y="97">02</text>
+<text class="t" x="500" y="97">faster-whisper</text>
+<text class="s" x="474" y="116">what was said</text>
+<rect class="card" x="458" y="136" width="200" height="56" rx="10"/>
+<text class="n" x="474" y="161">03</text>
+<text class="t" x="500" y="161">pyannote</text>
+<text class="s" x="474" y="180">who spoke when</text>
+<rect class="card" x="704" y="104" width="216" height="56" rx="10"/>
+<text class="t" x="720" y="129">Match by timestamps</text>
+<text class="s" x="720" y="148">each line gets a speaker</text>
+<path class="a" d="M216 132 H256" marker-end="url(#arr)"/>
+<path class="a" d="M412 132 C436 132 432 100 452 100" marker-end="url(#arr)"/>
+<path class="a" d="M412 132 C436 132 432 164 452 164" marker-end="url(#arr)"/>
+<path class="a" d="M658 100 C682 100 678 132 698 132" marker-end="url(#arr)"/>
+<path class="a" d="M658 164 C682 164 678 132 698 132" marker-end="url(#arr)"/>
+<path class="a" d="M812 160 V212 Q812 224 800 224 H76 Q64 224 64 236 V448 Q64 460 76 460 H90" marker-end="url(#arr)"/>
+<path class="a" d="M64 312 H90" marker-end="url(#arr)"/>
+<rect class="bgfill" x="318" y="215" width="244" height="18"/>
+<text class="m" x="440" y="228" text-anchor="middle">SPEAKER-LABELED TRANSCRIPT</text>
+<rect class="claude" x="96" y="276" width="230" height="72" rx="10"/>
+<text class="n" x="112" y="301">04</text>
+<text class="t" x="138" y="301">Claude writes notes</text>
+<text class="s" x="112" y="320">cites the lines it came from</text>
+<text class="s" x="112" y="337">and rates its own confidence</text>
+<path class="a" d="M326 312 H342" marker-end="url(#arr)"/>
+<rect class="gate" x="346" y="286" width="132" height="52" rx="26"/>
+<text class="m gate-m" x="412" y="306" text-anchor="middle">CONFIDENCE</text>
+<text class="t gate-t" x="412" y="325" text-anchor="middle">below 0.8?</text>
+<path class="a" d="M478 312 C504 312 500 268 524 268" marker-end="url(#arr)"/>
+<text class="m halo" x="503" y="293" text-anchor="middle">NO</text>
+<rect class="chip-ok" x="530" y="257" width="48" height="22" rx="6"/><text class="chip-ok-t" x="554.0" y="272" text-anchor="middle">96%</text>
+<text class="s" x="590" y="272">high confidence, kept as is</text>
+<path class="a" d="M764 268 H796" marker-end="url(#arr)"/>
+<path class="a" d="M478 312 C504 312 500 356 524 356" marker-end="url(#arr)"/>
+<text class="m halo" x="503" y="339" text-anchor="middle">YES</text>
+<rect class="claude" x="530" y="330" width="200" height="88" rx="10"/>
+<text class="n" x="546" y="355">05</text>
+<text class="t" x="572" y="355">Claude fact-checks</text>
+<text class="s" x="546" y="374">against the transcript</text>
+<rect class="chip-ok" x="546" y="384" width="80" height="22" rx="6"/><text class="chip-ok-t" x="586.0" y="399" text-anchor="middle">VERIFIED</text>
+<rect class="chip-bad" x="634" y="384" width="76" height="22" rx="6"/><text class="chip-bad-t" x="672.0" y="399" text-anchor="middle">FLAGGED</text>
+<path class="a" d="M730 374 H796" marker-end="url(#arr)"/>
+<rect class="claude" x="96" y="432" width="250" height="56" rx="10"/>
+<text class="n" x="112" y="457">06</text>
+<text class="t" x="138" y="457">Claude names speakers</text>
+<text class="s" x="112" y="476">finds names in the conversation</text>
+<path class="a" d="M346 460 H482"/>
+<rect class="chip-id" x="482" y="449" width="176" height="22" rx="6"/>
+<text class="chip-id-t" x="570" y="464" text-anchor="middle">SPEAKER_01 → SARAH</text>
+<path class="a" d="M658 460 H796" marker-end="url(#arr)"/>
+<path class="card" d="M800 266 V478 A60 10 0 0 0 920 478 V266"/>
+<ellipse class="card" cx="860" cy="266" rx="60" ry="10"/>
+<text class="m" x="860" y="356" text-anchor="middle">SAVED TO</text>
+<text class="t" x="860" y="378" text-anchor="middle">Postgres</text>
+<text class="s" x="860" y="396" text-anchor="middle">on Supabase</text>
+</svg>

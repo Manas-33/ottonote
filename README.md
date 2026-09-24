@@ -18,17 +18,10 @@ https://github.com/user-attachments/assets/b66afbac-9634-47f2-b812-c520774f447c
 
 ## How it works
 
-```mermaid
-flowchart LR
-    A["Chrome tab<br/>phone mic<br/>audio file"] --> B["ffmpeg"]
-    B --> C["faster-whisper"]
-    C --> D["pyannote"]
-    D --> E["Claude<br/>writes notes"]
-    E --> F{"confidence<br/>below 0.8?"}
-    F -- yes --> G["Claude<br/>fact-checks"]
-    F -- no --> H[("Postgres")]
-    G --> H
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="media/pipeline-dark.svg">
+  <img src="media/pipeline-light.svg" width="100%" alt="OttoNote pipeline. Audio from a Chrome tab, phone mic or audio file is converted by ffmpeg, then faster-whisper transcribes it and pyannote works out who spoke when. The two are matched by timestamps into a speaker-labeled transcript. Claude writes the notes, citing the lines each item came from and rating its own confidence. Items below 0.8 confidence go to a second Claude call that fact-checks them and marks them verified or flagged. A third Claude call names the speakers. Everything is saved to Postgres on Supabase.">
+</picture>
 
 When you stop recording, the audio goes to a FastAPI server and a Celery worker takes it through these steps:
 
